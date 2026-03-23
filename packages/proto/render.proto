@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package render;
+
+service RenderService {
+  rpc CompositeLayers (CompositeLayersRequest) returns (CompositeLayersResponse) {}
+}
+
+message TraceInfo {
+  string trace_id = 1;
+  string span_id = 2;
+  int64 time_start = 3;
+  int64 time_end = 4;
+  string service_name = 5;
+  string data = 6;
+  string data_ret = 7;
+  repeated TraceInfo sub_spans = 8;
+}
+
+message MapLayer {
+  int32 layer_type = 1;      // 0 = base, 10 = FOV, 20 = interactables
+  string tiles_json = 2;     // A JSON string mapping coordinates to chars or states
+}
+
+message CompositeLayersRequest {
+  repeated MapLayer layers = 3;
+  int32 player_x = 4;
+  int32 player_y = 5;
+  int32 visual_range = 6;
+  string current_enemies_json = 7;
+  string rooms_json = 8;
+  TraceInfo trace = 9;
+}
+
+message CompositeLayersResponse {
+  string merged_tiles_json = 1;
+  string updated_enemies_json = 2;
+  TraceInfo trace = 3;
+}

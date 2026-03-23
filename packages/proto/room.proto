@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package room;
+
+service RoomService {
+  rpc GenerateRoom (GenerateRoomRequest) returns (GenerateRoomResponse) {}
+  rpc GenerateCorridor (GenerateCorridorRequest) returns (GenerateCorridorResponse) {}
+}
+
+message TraceInfo {
+  string trace_id = 1;
+  string span_id = 2;
+  int64 time_start = 3;
+  int64 time_end = 4;
+  string service_name = 5;
+  string data = 6;
+  string data_ret = 7;
+  repeated TraceInfo sub_spans = 8;
+}
+
+message GenerateRoomRequest {
+  int32 level = 1;
+  TraceInfo trace = 2;
+  string tiles_json = 5;
+  int32 anchor_x = 6;
+  int32 anchor_y = 7;
+}
+
+message RoomPosition {
+  int32 x = 1;
+  int32 y = 2;
+}
+
+message GenerateRoomResponse {
+  int32 width = 1;
+  int32 height = 2;
+  string description = 3;
+  repeated RoomPosition doors = 4;
+  TraceInfo trace = 5;
+  bool fit_success = 6;
+  int32 origin_x = 7;
+  int32 origin_y = 8;
+  string new_tiles_json = 9;
+}
+
+message GenerateCorridorRequest {
+  int32 level = 1;
+  TraceInfo trace = 2;
+  string tiles_json = 5;
+  int32 anchor_x = 6;
+  int32 anchor_y = 7;
+}
+
+message GenerateCorridorResponse {
+  int32 length = 1;
+  string direction = 2;
+  string description = 3;
+  TraceInfo trace = 4;
+  bool fit_success = 5;
+  int32 origin_x = 6;
+  int32 origin_y = 7;
+  string new_tiles_json = 8;
+}

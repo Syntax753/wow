@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package inventory;
+
+service InventoryService {
+  rpc GetInventory (GetInventoryRequest) returns (InventoryState) {}
+  rpc AddItem (AddItemRequest) returns (InventoryState) {}
+  rpc DropItem (DropItemRequest) returns (InventoryState) {}
+  rpc UseItem (UseItemRequest) returns (UseItemResponse) {}
+}
+
+message TraceInfo {
+  string trace_id = 1;
+  string span_id = 2;
+  int64 time_start = 3;
+  int64 time_end = 4;
+  string service_name = 5;
+  string data = 6;
+  string data_ret = 7;
+  repeated TraceInfo sub_spans = 8;
+}
+
+message GetInventoryRequest {
+  string hero_id = 1;
+  TraceInfo trace = 2;
+}
+
+message AddItemRequest {
+  string hero_id = 1;
+  Item item = 2;
+  TraceInfo trace = 3;
+}
+
+message DropItemRequest {
+  string hero_id = 1;
+  string item_id = 2;
+  TraceInfo trace = 3;
+}
+
+message UseItemRequest {
+  string hero_id = 1;
+  string item_id = 2;
+  TraceInfo trace = 3;
+}
+
+message UseItemResponse {
+  bool success = 1;
+  string message = 2;
+  InventoryState inventory = 3;
+  TraceInfo trace = 4;
+}
+
+message Item {
+  string item_id = 1;
+  string name = 2;
+  string description = 3;
+  string item_type = 4;   // weapon, armor, potion, scroll, key, misc
+  int32 quantity = 5;
+  map<string, int32> modifiers = 6; // e.g. {"STR": 2, "VIT": -1}
+}
+
+message InventoryState {
+  string hero_id = 1;
+  repeated Item items = 2;
+  int32 capacity = 3;
+  int32 gold = 4;
+  TraceInfo trace = 5;
+}

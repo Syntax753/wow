@@ -1,0 +1,102 @@
+{
+  "data": {
+    "doors": [
+      {
+        "x": 0,
+        "y": 3
+      },
+      {
+        "x": 3,
+        "y": 0
+      }
+    ],
+    "structureType": "room",
+    "width": 7,
+    "height": 5,
+    "description": "A damp, moldy stone chamber.",
+    "trace": {
+      "subSpans": [
+        {
+          "subSpans": [],
+          "traceId": "22d9b3c2-a8de-4630-8fcd-0acad92720e5",
+          "spanId": "923589c7-1a1e-4f64-bd03-36809346569a",
+          "timeStart": 1774220657154,
+          "timeEnd": 1774220657155,
+          "serviceName": "dice-service",
+          "data": "[\"1d20\"]",
+          "dataRet": "{\"results\":[{\"rolls\":[4],\"die\":\"1d20\",\"total\":4}],\"grandTotal\":4}"
+        },
+        {
+          "subSpans": [],
+          "traceId": "22d9b3c2-a8de-4630-8fcd-0acad92720e5",
+          "spanId": "f5c14e9d-6a52-4d36-b1c3-72d1a3f734ce",
+          "timeStart": 1774220657157,
+          "timeEnd": 1774220657173,
+          "serviceName": "room-service",
+          "data": "{\"level\":1,\"anchorX\":0,\"anchorY\":7}",
+          "dataRet": "{\"doors\":[{\"x\":0,\"y\":3},{\"x\":3,\"y\":0}],\"width\":7,\"height\":5,\"description\":\"A damp, moldy stone chamber.\",\"fitSuccess\":false,\"originX\":0,\"originY\":0}"
+        }
+      ],
+      "traceId": "22d9b3c2-a8de-4630-8fcd-0acad92720e5",
+      "spanId": "7bf71291-7d6b-427e-bc79-68de426eeb32",
+      "timeStart": 1774220657153,
+      "timeEnd": 1774220657175,
+      "serviceName": "dnd-service",
+      "data": "{\"level\":1,\"trace\":{\"subSpans\":[],\"traceId\":\"22d9b3c2-a8de-4630-8fcd-0acad92720e5\",\"spanId\":\"7bf71291-7d6b-427e-bc79-68de426eeb32\",\"timeStart\":0,\"timeEnd\":0,\"serviceName\":\"\",\"data\":\"\",\"dataRet\":\"\"},\"mapWidth\":60,\"mapHeight\":15,\"tiles\":\"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    \",\"anchorX\":0,\"anchorY\":7}",
+      "dataRet": "{\"doors\":[{\"x\":0,\"y\":3},{\"x\":3,\"y\":0}],\"structureType\":\"room\",\"width\":7,\"height\":5,\"description\":\"A damp, moldy stone chamber.\",\"fitSuccess\":false,\"originX\":0,\"originY\":0}"
+    },
+    "fitSuccess": false,
+    "originX": 0,
+    "originY": 0
+  },
+  "logEntries": [
+    {
+      "text": "A damp, moldy stone chamber.",
+      "type": "discovery",
+      "source": "dnd",
+      "timestamp": 1774220657175
+    }
+  ],
+  "trace": {
+    "traceId": "22d9b3c2-a8de-4630-8fcd-0acad92720e5",
+    "spanId": "0acd80bf-2190-41b0-978c-5acdf4b9f9be",
+    "timeStart": 1774220657152,
+    "serviceName": "wow-api",
+    "data": "{\"method\":\"POST\",\"url\":\"/api/dnd/explore\",\"body\":{\"level\":1,\"mapWidth\":60,\"mapHeight\":15,\"tiles\":\"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    \",\"doorX\":0,\"doorY\":7}}",
+    "dataRet": "{\"doors\":[{\"x\":0,\"y\":3},{\"x\":3,\"y\":0}],\"structureType\":\"room\",\"width\":7,\"height\":5,\"description\":\"A damp, moldy stone chamber.\",\"fitSuccess\":false,\"originX\":0,\"originY\":0}",
+    "subSpans": [
+      {
+        "subSpans": [
+          {
+            "subSpans": [],
+            "traceId": "22d9b3c2-a8de-4630-8fcd-0acad92720e5",
+            "spanId": "923589c7-1a1e-4f64-bd03-36809346569a",
+            "timeStart": 1774220657154,
+            "timeEnd": 1774220657155,
+            "serviceName": "dice-service",
+            "data": "[\"1d20\"]",
+            "dataRet": "{\"results\":[{\"rolls\":[4],\"die\":\"1d20\",\"total\":4}],\"grandTotal\":4}"
+          },
+          {
+            "subSpans": [],
+            "traceId": "22d9b3c2-a8de-4630-8fcd-0acad92720e5",
+            "spanId": "f5c14e9d-6a52-4d36-b1c3-72d1a3f734ce",
+            "timeStart": 1774220657157,
+            "timeEnd": 1774220657173,
+            "serviceName": "room-service",
+            "data": "{\"level\":1,\"anchorX\":0,\"anchorY\":7}",
+            "dataRet": "{\"doors\":[{\"x\":0,\"y\":3},{\"x\":3,\"y\":0}],\"width\":7,\"height\":5,\"description\":\"A damp, moldy stone chamber.\",\"fitSuccess\":false,\"originX\":0,\"originY\":0}"
+          }
+        ],
+        "traceId": "22d9b3c2-a8de-4630-8fcd-0acad92720e5",
+        "spanId": "7bf71291-7d6b-427e-bc79-68de426eeb32",
+        "timeStart": 1774220657153,
+        "timeEnd": 1774220657175,
+        "serviceName": "dnd-service",
+        "data": "{\"level\":1,\"trace\":{\"subSpans\":[],\"traceId\":\"22d9b3c2-a8de-4630-8fcd-0acad92720e5\",\"spanId\":\"7bf71291-7d6b-427e-bc79-68de426eeb32\",\"timeStart\":0,\"timeEnd\":0,\"serviceName\":\"\",\"data\":\"\",\"dataRet\":\"\"},\"mapWidth\":60,\"mapHeight\":15,\"tiles\":\"                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    \",\"anchorX\":0,\"anchorY\":7}",
+        "dataRet": "{\"doors\":[{\"x\":0,\"y\":3},{\"x\":3,\"y\":0}],\"structureType\":\"room\",\"width\":7,\"height\":5,\"description\":\"A damp, moldy stone chamber.\",\"fitSuccess\":false,\"originX\":0,\"originY\":0}"
+      }
+    ],
+    "timeEnd": 1774220657175
+  }
+}

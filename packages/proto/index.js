@@ -1,0 +1,52 @@
+const path = require('path');
+const grpc = require('@grpc/grpc-js');
+const protoLoader = require('@grpc/proto-loader');
+
+const PROTO_DIR = __dirname;
+
+const loaderOptions = {
+  keepCase: false,
+  longs: Number,
+  enums: String,
+  defaults: true,
+  oneofs: true,
+};
+
+function loadProto(protoFile) {
+  const packageDefinition = protoLoader.loadSync(
+    path.join(PROTO_DIR, protoFile),
+    loaderOptions
+  );
+  return grpc.loadPackageDefinition(packageDefinition);
+}
+
+const diceProto = loadProto('dice.proto');
+const dndProto = loadProto('dnd.proto');
+const heroProto = loadProto('hero.proto');
+const inventoryProto = loadProto('inventory.proto');
+const actionProto = loadProto('action.proto');
+const roomProto = loadProto('room.proto');
+const shadeProto = loadProto('shade.proto');
+const renderProto = loadProto('render.proto');
+const enemyProto = loadProto('enemy.proto');
+
+module.exports = {
+  grpc,
+  diceProto,
+  dndProto,
+  heroProto,
+  inventoryProto,
+  actionProto,
+  roomProto,
+  shadeProto,
+  renderProto,
+  DiceService: diceProto.dice.DiceService,
+  DndService: dndProto.dnd.DndService,
+  HeroService: heroProto.hero.HeroService,
+  InventoryService: inventoryProto.inventory.InventoryService,
+  ActionService: actionProto.action.ActionService,
+  RoomService: roomProto.room.RoomService,
+  ShadeService: shadeProto.shade.ShadeService,
+  RenderService: renderProto.render.RenderService,
+  EnemyService: enemyProto.enemy.EnemyService,
+};

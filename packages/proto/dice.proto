@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package dice;
+
+service DiceService {
+  rpc RollDice (RollRequest) returns (RollResponse) {}
+}
+
+message TraceInfo {
+  string trace_id = 1;
+  string span_id = 2;
+  int64 time_start = 3;
+  int64 time_end = 4;
+  string service_name = 5;
+  string data = 6;
+  string data_ret = 7;
+  repeated TraceInfo sub_spans = 8;
+}
+
+message RollRequest {
+  repeated string dice = 1;
+  TraceInfo trace = 2;
+}
+
+message RollResult {
+  string die = 1;
+  repeated int32 rolls = 2;
+  int32 total = 3;
+}
+
+message RollResponse {
+  repeated RollResult results = 1;
+  int32 grand_total = 2;
+  TraceInfo trace = 3;
+}

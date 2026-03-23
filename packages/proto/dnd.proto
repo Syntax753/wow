@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+package dnd;
+
+import "room.proto";
+
+service DndService {
+  rpc GenerateRoom (GenerateRoomRequest) returns (GenerateRoomResponse) {}
+  rpc GenerateCorridor (GenerateCorridorRequest) returns (GenerateCorridorResponse) {}
+  rpc ExploreDoor (ExploreDoorRequest) returns (ExploreDoorResponse) {}
+  rpc ComputeMapModifiers (ComputeMapModifiersRequest) returns (ComputeMapModifiersResponse) {}
+}
+
+message TraceInfo {
+  string trace_id = 1;
+  string span_id = 2;
+  int64 time_start = 3;
+  int64 time_end = 4;
+  string service_name = 5;
+  string data = 6;
+  string data_ret = 7;
+  repeated TraceInfo sub_spans = 8;
+}
+
+message MapLayer {
+  int32 layer_type = 1;
+  string tiles_json = 2;
+}
+
+message ComputeMapModifiersRequest {
+  string tiles_json = 1;
+  int32 player_x = 2;
+  int32 player_y = 3;
+  int32 visual_range = 4;
+  string current_enemies_json = 5;
+  string rooms_json = 6;
+  TraceInfo trace = 7;
+}
+
+message ComputeMapModifiersResponse {
+  string merged_tiles_json = 1;
+
+  // Initialized Map State Overrides
+  string new_collision_tiles = 2;
+  int32 new_player_x = 3;
+  int32 new_player_y = 4;
+  string new_rooms_json = 5;
+  string updated_enemies_json = 6;
+
+  TraceInfo trace = 7;
+}
+
+message ExploreDoorRequest {
+  int32 level = 1;
+  TraceInfo trace = 2;
+  string tiles_json = 5;
+  int32 anchor_x = 6;
+  int32 anchor_y = 7;
+}
+
+message ExploreDoorResponse {
+  string structure_type = 1;
+  int32 width = 2;
+  int32 height = 3;
+  string description = 4;
+  repeated room.RoomPosition doors = 5;
+  TraceInfo trace = 6;
+  bool fit_success = 7;
+  int32 origin_x = 8;
+  int32 origin_y = 9;
+  string new_tiles_json = 10;
+  string merged_tiles_json = 11;  // Rendered viewport from render-service
+  string updated_enemies_json = 12;
+}
+
+message GenerateRoomRequest {
+  int32 level = 1;
+  TraceInfo trace = 2;
+  string tiles_json = 5;
+  int32 anchor_x = 6;
+  int32 anchor_y = 7;
+}
+
+message GenerateRoomResponse {
+  int32 width = 1;
+  int32 height = 2;
+  string description = 3;
+  repeated room.RoomPosition doors = 4;
+  TraceInfo trace = 5;
+  bool fit_success = 6;
+  int32 origin_x = 7;
+  int32 origin_y = 8;
+}
+
+message GenerateCorridorRequest {
+  int32 level = 1;
+  TraceInfo trace = 2;
+  string tiles_json = 5;
+  int32 anchor_x = 6;
+  int32 anchor_y = 7;
+}
+
+message GenerateCorridorResponse {
+  int32 length = 1;
+  string direction = 2;
+  string description = 3;
+  TraceInfo trace = 4;
+  bool fit_success = 5;
+  int32 origin_x = 6;
+  int32 origin_y = 7;
+}

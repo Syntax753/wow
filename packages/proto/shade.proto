@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package shade;
+
+service ShadeService {
+  rpc ComputeVisibility (ComputeVisibilityRequest) returns (ComputeVisibilityResponse) {}
+}
+
+message TraceInfo {
+  string trace_id = 1;
+  string span_id = 2;
+  int64 time_start = 3;
+  int64 time_end = 4;
+  string service_name = 5;
+  string data = 6;
+  string data_ret = 7;
+  repeated TraceInfo sub_spans = 8;
+}
+
+message ComputeVisibilityRequest {
+  string tiles_json = 3;        // The full map to raytrace over (walls block, floor passes context)
+  int32 player_x = 4;
+  int32 player_y = 5;
+  int32 visual_range = 6;
+  TraceInfo trace = 7;
+}
+
+message ComputeVisibilityResponse {
+  int32 layer_type = 1;
+  string tiles_json = 2; // array of coordinates or state masks
+  TraceInfo trace = 3;
+}

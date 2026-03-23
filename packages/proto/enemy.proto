@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package enemy;
+
+message TraceInfo {
+  string trace_id = 1;
+  string span_id = 2;
+  int64 time_start = 3;
+  int64 time_end = 4;
+  string service_name = 5;
+  string data = 6;
+  string data_ret = 7;
+  repeated TraceInfo sub_spans = 8;
+}
+
+message Enemy {
+  string id = 1;
+  string type = 2;
+  string char = 3;
+  int32 x = 4;
+  int32 y = 5;
+  int32 hp = 6;
+  int32 max_hp = 7;
+}
+
+message MapLayer {
+  int32 layer_type = 1;
+  string tiles_json = 2;
+}
+
+message ProcessEnemiesRequest {
+  string tiles_json = 3;
+  string rooms_json = 4;
+  int32 player_x = 5;
+  int32 player_y = 6;
+  string current_enemies_json = 7;
+  TraceInfo trace = 8;
+}
+
+message ProcessEnemiesResponse {
+  string updated_enemies_json = 1;
+  MapLayer enemy_layer = 2;
+  TraceInfo trace = 3;
+}
+
+service EnemyService {
+  rpc ProcessEnemies (ProcessEnemiesRequest) returns (ProcessEnemiesResponse) {}
+}

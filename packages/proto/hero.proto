@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package hero;
+
+service HeroService {
+  rpc GetHero (GetHeroRequest) returns (HeroState) {}
+  rpc UpdateStat (UpdateStatRequest) returns (HeroState) {}
+  rpc ResetHero (ResetHeroRequest) returns (HeroState) {}
+}
+
+message TraceInfo {
+  string trace_id = 1;
+  string span_id = 2;
+  int64 time_start = 3;
+  int64 time_end = 4;
+  string service_name = 5;
+  string data = 6;
+  string data_ret = 7;
+  repeated TraceInfo sub_spans = 8;
+}
+
+message GetHeroRequest {
+  string hero_id = 1;
+  TraceInfo trace = 2;
+}
+
+message UpdateStatRequest {
+  string hero_id = 1;
+  string stat_name = 2; // STR, VIT, AGI, WIS, LCK
+  int32 delta = 3;      // positive = increase, negative = decrease
+  TraceInfo trace = 4;
+}
+
+message ResetHeroRequest {
+  string hero_id = 1;
+  string name = 2;
+  string hero_class = 3;
+  TraceInfo trace = 4;
+}
+
+message HeroState {
+  string hero_id = 1;
+  string name = 2;
+  string hero_class = 3;
+  int32 level = 4;
+  int32 hp = 5;
+  int32 max_hp = 6;
+  int32 xp = 7;
+  int32 strength = 8;
+  int32 vitality = 9;
+  int32 agility = 10;
+  int32 wisdom = 11;
+  int32 armor_class = 13;
+  TraceInfo trace = 14;
+}

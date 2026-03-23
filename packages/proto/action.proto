@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package action;
+
+service ActionService {
+  rpc GetAvailableActions (WorldStateRequest) returns (AvailableActionsResponse) {}
+}
+
+message TraceInfo {
+  string trace_id = 1;
+  string span_id = 2;
+  int64 time_start = 3;
+  int64 time_end = 4;
+  string service_name = 5;
+  string data = 6;
+  string data_ret = 7;
+  repeated TraceInfo sub_spans = 8;
+}
+
+message WorldStateRequest {
+  // Serialized world state so the action service can determine available actions
+  string tiles_json = 3;
+  int32 player_x = 4;
+  int32 player_y = 5;
+  int32 level = 6;
+  repeated RoomInfo rooms = 7;
+  string hero_id = 8;
+  TraceInfo trace = 9;
+}
+
+message RoomInfo {
+  int32 x = 1;
+  int32 y = 2;
+  int32 width = 3;
+  int32 height = 4;
+  string description = 5;
+}
+
+message GameAction {
+  string key = 1;          // e.g. "o", "a", "e", "i"
+  string label = 2;        // e.g. "Open", "Attack", "Explore", "Inventory"
+  string description = 3;  // e.g. "Open the door to the north"
+  bool enabled = 4;
+}
+
+message Inspector {
+  string title = 1;
+  string description = 2;
+  string image = 3;
+  repeated GameAction actions = 4;
+}
+
+message AvailableActionsResponse {
+  Inspector overlay = 1;
+  TraceInfo trace = 2;
+}

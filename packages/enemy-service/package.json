@@ -1,0 +1,15 @@
+{
+  "name": "@wow/enemy-service",
+  "version": "1.0.0",
+  "description": "WoW Enemy and Orchestration Service",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node index.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@wow/proto": "1.0.0",
+    "@grpc/grpc-js": "^1.10.2",
+    "uuid": "^9.0.1"
+  }
+}

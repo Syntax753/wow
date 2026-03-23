@@ -1,0 +1,13 @@
+{
+  "name": "@wow/render-service",
+  "version": "1.0.0",
+  "description": "Render microservice handling map layer composition",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.10.x",
+    "@wow/proto": "*"
+  }
+}
