@@ -220,6 +220,52 @@ const server = http.createServer(async (req, res) => {
         logEntry(result.message, result.success ? 'action' : 'info', 'inventory'),
       ], rootSpan));
 
+    // === Unified Input Handler ===
+    } else if (req.url === '/api/input' && req.method === 'POST') {
+      const dndResult = await grpcCall(dndClient, 'dnd-service', 'processInput', {
+        key: body.key || '',
+        visualRange: body.visualRange || 8,
+        currentEnemiesJson: body.currentEnemiesJson || '[]',
+        level: body.level || 1,
+      }, rootSpan);
+
+      // Fetch world state for action-service overlay
+      const worldState = await grpcCall(worldClient, 'world-service', 'getWorldState', {}, rootSpan);
+      let worldRooms = [];
+      try { worldRooms = JSON.parse(worldState.roomsJson || '[]'); } catch {}
+
+      const actionResult = await grpcCall(actionClient, 'action-service', 'getAvailableActions', {
+        tilesJson: worldState.tilesJson || '{}',
+        playerX: dndResult.playerX || 0,
+        playerY: dndResult.playerY || 0,
+        level: body.level || 1,
+        rooms: worldRooms,
+        heroId: 'default',
+      }, rootSpan);
+
+      rootSpan.timeEnd = Date.now();
+
+      const logs = [];
+      if (dndResult.message) {
+        logs.push(logEntry(dndResult.message, dndResult.action === 'blocked' ? 'combat' : 'action', 'dnd'));
+      }
+
+      json(res, 200, envelope({
+        map: {
+          merged_tiles_json: dndResult.mergedTilesJson,
+          updated_enemies_json: dndResult.updatedEnemiesJson,
+          new_collision_tiles: dndResult.newCollisionTiles,
+          new_rooms_json: dndResult.newRoomsJson,
+        },
+        player: {
+          x: dndResult.playerX,
+          y: dndResult.playerY,
+        },
+        action: dndResult.action,
+        message: dndResult.message,
+        actions: actionResult.overlay,
+      }, logs, rootSpan));
+
     // === Game Loop Sync (Map Modifiers + Actions in one unified trace) ===
     } else if (req.url === '/api/sync' && req.method === 'POST') {
       // Run DnD map modifiers (will init world if needed)
@@ -248,13 +294,14 @@ const server = http.createServer(async (req, res) => {
       
       const mapPayload = {
         merged_tiles_json: dndResult.mergedTilesJson,
-        updated_enemies_json: dndResult.updatedEnemiesJson
+        updated_enemies_json: dndResult.updatedEnemiesJson,
+        // Always include world state so frontend has collision data
+        new_collision_tiles: dndResult.newCollisionTiles || worldState.tilesJson,
+        new_rooms_json: dndResult.newRoomsJson || worldState.roomsJson,
       };
-      if (dndResult.newCollisionTiles) {
-        mapPayload.new_collision_tiles = dndResult.newCollisionTiles;
+      if (dndResult.newPlayerX !== undefined && dndResult.newPlayerX !== 0) {
         mapPayload.new_player_x = dndResult.newPlayerX;
         mapPayload.new_player_y = dndResult.newPlayerY;
-        mapPayload.new_rooms_json = dndResult.newRoomsJson;
       }
       
       json(res, 200, envelope({ map: mapPayload, actions: actionResult.overlay }, [], rootSpan));

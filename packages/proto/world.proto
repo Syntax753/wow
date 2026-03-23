@@ -7,6 +7,7 @@ service WorldService {
   rpc GetWorldState (GetWorldStateRequest) returns (GetWorldStateResponse) {}
   rpc InitWorld (InitWorldRequest) returns (InitWorldResponse) {}
   rpc ResetWorld (ResetWorldRequest) returns (ResetWorldResponse) {}
+  rpc RevealTiles (RevealTilesRequest) returns (RevealTilesResponse) {}
 }
 
 message TraceInfo {
@@ -54,7 +55,18 @@ message GetWorldStateRequest {
 message GetWorldStateResponse {
   string tiles_json = 1;
   string rooms_json = 2;
+  string revealed_json = 4;
   TraceInfo trace = 3;
+}
+
+message RevealTilesRequest {
+  string visible_coords_json = 1;
+  TraceInfo trace = 2;
+}
+
+message RevealTilesResponse {
+  string revealed_json = 1;
+  TraceInfo trace = 2;
 }
 
 message InitWorldRequest {

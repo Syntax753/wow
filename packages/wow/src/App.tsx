@@ -1,20 +1,16 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   createInitialState,
-  movePlayer,
-  addRoom,
   getTileClass,
   serializeWorldState,
-  TILE,
   type GameState,
   type LogEntry,
-  type Position,
 } from './game'
 import {
-  exploreDoor as apiExploreDoor,
   healthCheck,
   getHero,
   syncTurn,
+  sendInput,
   type HeroState,
   type Inspector,
   type LogEntry as ApiLogEntry,
@@ -24,15 +20,25 @@ import './index.css'
 
 type ServiceStatus = 'connecting' | 'online' | 'offline'
 
+// Keys that should be routed to the server-side input-service
+const INPUT_KEYS = new Set([
+  'w', 'W', 'a', 'A', 's', 'S', 'd', 'D',
+  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'o', 'O', 'e', 'E', '.',
+])
+
 function App() {
   const [gameState, setGameState] = useState<GameState>(createInitialState)
   const [serviceStatus, setServiceStatus] = useState<ServiceStatus>('connecting')
-  const [isExploring, setIsExploring] = useState(false)
+  const [processing, setProcessing] = useState(false)
   const [hero, setHero] = useState<HeroState | null>(null)
   const [overlay, setOverlay] = useState<Inspector | null>(null)
 
   // Multi-layered visual state orchestrator
   const [mapGrid, setMapGrid] = useState<Tile[][]>([])
+
+  // Track whether initial sync has completed
+  const initialSyncDone = useRef(false)
 
   useEffect(() => {
     getHero()
@@ -56,49 +62,43 @@ function App() {
     return () => { cancelled = true; clearInterval(interval) }
   }, [])
 
-  // Fetch available actions and FOV visibility via unified Sync endpoint
+  // Initial sync — render the world on first load
   useEffect(() => {
-    if (serviceStatus !== 'online') return
-    const ws = serializeWorldState(gameState)
+    if (serviceStatus !== 'online' || initialSyncDone.current) return
+    initialSyncDone.current = true
 
+    const ws = serializeWorldState(gameState)
     syncTurn(ws.playerX, ws.playerY, ws.currentEnemiesJson, 8, ws.level)
       .then((res) => {
-        // Actions
         setOverlay(res.data.actions || null)
 
-        // Map Modifiers
-        const mapData = res.data.map;
-        if (!mapData.merged_tiles_json) return;
-        
-        setMapGrid(JSON.parse(mapData.merged_tiles_json));
-        
-        // Dynamic map instantiation handling
-        if (mapData.new_collision_tiles) {
-          let rebuiltTiles = {};
-          try { rebuiltTiles = JSON.parse(mapData.new_collision_tiles); } catch {}
+        const mapData = res.data.map
+        if (!mapData.merged_tiles_json) return
 
-          setGameState(prev => ({
-            ...prev,
-            tiles: rebuiltTiles,
-            player: {
-              x: mapData.new_player_x ?? prev.player.x,
-              y: mapData.new_player_y ?? prev.player.y
-            },
-            rooms: mapData.new_rooms_json ? JSON.parse(mapData.new_rooms_json) : prev.rooms,
-            enemies: mapData.updated_enemies_json ? JSON.parse(mapData.updated_enemies_json) : prev.enemies
-          }));
-        } else if (mapData.updated_enemies_json) {
-          setGameState(prev => ({
-            ...prev,
-            enemies: JSON.parse(mapData.updated_enemies_json!)
-          }));
-        }
+        setMapGrid(JSON.parse(mapData.merged_tiles_json))
+
+        setGameState(prev => {
+          const update: Partial<GameState> = {}
+          if (mapData.new_collision_tiles) {
+            try { update.tiles = JSON.parse(mapData.new_collision_tiles) } catch {}
+          }
+          if (mapData.new_rooms_json) {
+            try { update.rooms = JSON.parse(mapData.new_rooms_json) } catch {}
+          }
+          if (mapData.updated_enemies_json) {
+            try { update.enemies = JSON.parse(mapData.updated_enemies_json) } catch {}
+          }
+          if (mapData.new_player_x !== undefined && mapData.new_player_x !== 0) {
+            update.player = { x: mapData.new_player_x, y: mapData.new_player_y ?? prev.player.y }
+          }
+          return { ...prev, ...update }
+        })
       })
       .catch((err) => {
-        console.error('Game Sync Error:', err);
-        setOverlay(null);
-      });
-  }, [gameState.player.x, gameState.player.y, gameState.rooms.length, gameState.exploredDoors.size, serviceStatus])
+        console.error('Initial sync error:', err)
+        initialSyncDone.current = false // retry on next render
+      })
+  }, [serviceStatus])
 
   /** Append log entries from an API response into the game state */
   const appendServiceLogs = useCallback((apiLogs: ApiLogEntry[]) => {
@@ -124,150 +124,101 @@ function App() {
     }))
   }, [])
 
-  const exploreDoor = useCallback(
-    async (doorPos: Position) => {
-      const doorKey = `${doorPos.x},${doorPos.y}`
-      setGameState((prev) => {
-        if (prev.exploredDoors.has(doorKey)) return prev
-        return { ...prev, exploredDoors: new Set([...prev.exploredDoors, doorKey]) }
-      })
+  // Unified input handler — sends keypress to server
+  const handleInput = useCallback(async (key: string) => {
+    if (processing || serviceStatus !== 'online') return
 
-      setIsExploring(true)
-      addMessage('You push the door open and peer into the darkness...', 'action', 'wow')
+    setProcessing(true)
+    try {
+      const ws = serializeWorldState(gameState)
+      const res = await sendInput(key, ws.currentEnemiesJson, 8, ws.level)
+      const data = res.data
 
-      try {
-        const ws = serializeWorldState(gameState)
-        const res = await apiExploreDoor(doorPos.x, doorPos.y, ws.playerX, ws.playerY, ws.currentEnemiesJson, 8, ws.level)
-        const struct = res.data
-        appendServiceLogs(res.logEntries)
+      appendServiceLogs(res.logEntries)
 
-        // Immediately apply the composited map from dnd-service (no sync-lag blink)
-        if (struct.mergedTilesJson) {
-          try { setMapGrid(JSON.parse(struct.mergedTilesJson)); } catch {}
+      // Update rendered map
+      if (data.map.merged_tiles_json) {
+        setMapGrid(JSON.parse(data.map.merged_tiles_json))
+      }
+
+      // Update game state from server response
+      setGameState(prev => {
+        const update: Partial<GameState> = {}
+
+        // Server is authoritative for player position
+        if (data.player) {
+          update.player = { x: data.player.x, y: data.player.y }
+        }
+        if (data.map.new_collision_tiles) {
+          try { update.tiles = JSON.parse(data.map.new_collision_tiles) } catch {}
+        }
+        if (data.map.new_rooms_json) {
+          try { update.rooms = JSON.parse(data.map.new_rooms_json) } catch {}
+        }
+        if (data.map.updated_enemies_json) {
+          try { update.enemies = JSON.parse(data.map.updated_enemies_json) } catch {}
         }
 
-        setGameState((prev) => {
-          if (struct.fitSuccess === false) {
-            addMessage(struct.description || 'The doorway collapses into solid rock...', 'system', 'wow')
-            const newTiles = { ...prev.tiles }
-            newTiles[`${doorPos.x},${doorPos.y}`] = TILE.WALL
-            const newExplored = new Set(prev.exploredDoors)
-            newExplored.delete(doorKey)
-            return { ...prev, tiles: newTiles, exploredDoors: newExplored }
-          }
+        // Add server message to log
+        const messages = [...prev.messages]
+        if (data.message) {
+          messages.push({
+            text: data.message,
+            type: data.action === 'blocked' ? 'combat' as const : 'action' as const,
+            source: 'dnd',
+            timestamp: Date.now(),
+          })
+        }
 
-          // World-service owns tile state — sync from response
-          let newTiles = prev.tiles
-          if (struct.newTilesJson) {
-            try { newTiles = JSON.parse(struct.newTilesJson) } catch {}
-          }
-          let newRooms = prev.rooms
-          if (struct.newRoomsJson) {
-            try { newRooms = JSON.parse(struct.newRoomsJson) } catch {}
-          }
-          let newEnemies = prev.enemies
-          if (struct.updatedEnemiesJson) {
-            try { newEnemies = JSON.parse(struct.updatedEnemiesJson) } catch {}
-          }
+        return { ...prev, ...update, messages }
+      })
 
-          return {
-            ...prev,
-            tiles: newTiles,
-            rooms: newRooms,
-            enemies: newEnemies,
-          }
-        })
-      } catch {
-        addMessage('The door seems stuck... (services may be offline)', 'system', 'wow')
-      }
-      setIsExploring(false)
-    },
-    [addMessage, appendServiceLogs, gameState.level]
-  )
+      // Update action overlay
+      setOverlay(data.actions || null)
+    } catch (err) {
+      console.error('Input error:', err)
+      addMessage('Connection lost... (services may be offline)', 'system', 'wow')
+    }
+    setProcessing(false)
+  }, [processing, serviceStatus, gameState, appendServiceLogs, addMessage])
 
-  // Keyboard handler
+  // Keyboard handler — routes all game keys to server
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isExploring) return
+      // Map 'e'/'E' to 'o' (open door) for backwards compatibility
+      let key = e.key
+      if (key === 'e' || key === 'E') key = 'o'
 
-      let dx = 0, dy = 0
-
-      // Check if the key maps to an inspector action first!
-      if (overlay?.actions) {
-        const action = overlay.actions.find((a) => a.key === e.key && a.enabled)
-        if (action) {
-          e.preventDefault()
-          addMessage(`Action [${action.key}] -> ${action.label}`, 'action', 'wow')
-          // TODO: Actually send action execution out to the action-service
-          return
-        }
+      if (INPUT_KEYS.has(key) || INPUT_KEYS.has(e.key)) {
+        e.preventDefault()
+        handleInput(key)
       }
-
-      switch (e.key) {
-        case 'ArrowUp': case 'w': case 'W': dy = -1; break
-        case 'ArrowDown': case 's': case 'S': dy = 1; break
-        case 'ArrowLeft': case 'a': case 'A': dx = -1; break
-        case 'ArrowRight': case 'd': case 'D': dx = 1; break
-        case 'e': case 'E': {
-          setGameState((prev) => {
-            const { x, y } = prev.player
-            const adjacent = [
-              { x: x, y: y - 1 },
-              { x: x, y: y + 1 },
-              { x: x - 1, y: y },
-              { x: x + 1, y: y },
-            ]
-            for (const pos of adjacent) {
-              const key = `${pos.x},${pos.y}`
-              if (prev.tiles[key] === TILE.DOOR || prev.tiles[key] === '+') {
-                if (!prev.exploredDoors.has(key)) {
-                  exploreDoor(pos)
-                  return prev
-                }
-              }
-            }
-            return prev
-          })
-          return
-        }
-        default: return
-      }
-
-      e.preventDefault()
-
-      setGameState((prev) => {
-        const { state: newState, hitDoor } = movePlayer(prev, dx, dy)
-        if (hitDoor && !prev.exploredDoors.has(`${hitDoor.x},${hitDoor.y}`)) {
-          exploreDoor(hitDoor)
-        }
-        return newState
-      })
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isExploring, exploreDoor])
+  }, [handleInput])
 
   // Render colored ASCII map
   const renderColoredMap = () => {
-    // If the base grid hasn't mounted yet, render an empty buffer
-    if (!mapGrid || mapGrid.length === 0) return null;
+    if (!mapGrid || mapGrid.length === 0) return null
 
     return mapGrid.map((row, y) => (
       <div key={y} style={{ display: 'flex' }}>
         {row.map((tile, x) => {
           let tClass = getTileClass(tile.char)
-          
-          // Flatten layer 10 FOV Raytracing map over the output if unseen
-          if (!tile.visible) {
-            tClass += ' obscured'
-          } else {
+
+          if (tile.visible) {
             tClass += ' visible-bright'
+          } else if (tile.revealed) {
+            tClass += ' fog-of-war'
+          } else {
+            tClass += ' obscured'
           }
-          
+
           return (
             <span key={x} className={tClass}>
-              {tile.char}
+              {tile.visible || tile.revealed ? tile.char : ' '}
             </span>
           )
         })}
@@ -302,6 +253,7 @@ function App() {
           <span className={`status-dot ${serviceStatus}`}>rnd</span>
           <span className={`status-dot ${serviceStatus}`}>enm</span>
           <span className={`status-dot ${serviceStatus}`}>wld</span>
+          <span className={`status-dot ${serviceStatus}`}>inp</span>
         </div>
       </div>
 
@@ -309,7 +261,7 @@ function App() {
       <div className="map-panel">
         <div className="panel-title">Dungeon — Level {gameState.level}</div>
         <div className="map-viewport">
-          {isExploring ? (
+          {processing && mapGrid.length === 0 ? (
             <div className="loading-overlay">
               <div className="loading-spinner" />
               <span>Generating dungeon...</span>
@@ -345,12 +297,12 @@ function App() {
           </div>
         </div>
 
-        {/* Message Log (room descriptions etc) */}
+        {/* Message Log */}
         <div className="log-panel">
           <div className="panel-title">Message Log</div>
           <div className="log-messages">
             {gameState.messages
-              .filter((m) => !m.source || m.source === 'wow' || m.source === 'system')
+              .filter((m) => !m.source || m.source === 'wow' || m.source === 'system' || m.source === 'dnd')
               .reverse()
               .slice(0, 20)
               .map((msg, i) => (
@@ -363,9 +315,9 @@ function App() {
         </div>
       </div>
 
-      {/* Bottom Info Panel: hero stats (left 33%) + overlay (middle 33%) + service log (right 33%) */}
+      {/* Bottom Info Panel */}
       <div className="info-panel">
-        
+
         {/* Left third: Stats grid */}
         <div className="hero-stats">
           <div className="hero-stat">
@@ -422,7 +374,7 @@ function App() {
           <div className="service-log-title">Service Log</div>
           <div className="service-log-messages">
             {gameState.messages
-              .filter((m) => m.source && m.source !== 'wow' && m.source !== 'system')
+              .filter((m) => m.source && m.source !== 'wow' && m.source !== 'system' && m.source !== 'dnd')
               .reverse()
               .slice(0, 20)
               .map((msg, i) => (

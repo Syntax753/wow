@@ -132,15 +132,39 @@ async function generateCorridor(call, callback) {
     const directions = ['N', 'S', 'E', 'W'];
     const direction = directions[(dirRoll.grandTotal - 1) % 4];
 
-    // Build local tile map
+    // Build local tile map — 3-wide corridor with walls on both sides
+    // and a door at the far end for further exploration.
+    // Vertical (N/S): width=3, height=length — floor column at x=1
+    // Horizontal (E/W): width=length, height=3 — floor row at y=1
     const localTiles = {};
     const isVertical = direction === 'N' || direction === 'S';
-    const w = isVertical ? 1 : length;
-    const h = isVertical ? length : 1;
+    const w = isVertical ? 3 : length;
+    const h = isVertical ? length : 3;
 
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
-        localTiles[`${x},${y}`] = '.';
+        if (isVertical) {
+          // Vertical corridor: walls at x=0 and x=2, floor at x=1
+          localTiles[`${x},${y}`] = (x === 1) ? '.' : '#';
+        } else {
+          // Horizontal corridor: walls at y=0 and y=2, floor at y=1
+          localTiles[`${x},${y}`] = (y === 1) ? '.' : '#';
+        }
+      }
+    }
+
+    // Place a door at the far end of the corridor
+    if (isVertical) {
+      if (direction === 'N') {
+        localTiles[`1,0`] = '+';  // Door at top
+      } else {
+        localTiles[`1,${h - 1}`] = '+';  // Door at bottom
+      }
+    } else {
+      if (direction === 'W') {
+        localTiles[`0,1`] = '+';  // Door at left
+      } else {
+        localTiles[`${w - 1},1`] = '+';  // Door at right
       }
     }
 
@@ -149,7 +173,7 @@ async function generateCorridor(call, callback) {
     const descIndex = (descRoll.grandTotal - 1) % CORRIDOR_DESCRIPTIONS.length;
     const description = CORRIDOR_DESCRIPTIONS[descIndex];
 
-    console.log(`[RoomService] Generated corridor: ${length} tiles ${direction}`);
+    console.log(`[RoomService] Generated corridor: ${length} tiles ${direction} (${w}x${h})`);
 
     callback(null, {
       length,

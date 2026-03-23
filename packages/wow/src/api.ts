@@ -128,6 +128,7 @@ export interface Inspector {
 export interface Tile {
   char: string;
   visible: boolean;
+  revealed: boolean;
 }
 
 export interface ComputeMapModifiersResponse {
@@ -141,6 +142,22 @@ export interface ComputeMapModifiersResponse {
 
 export interface GameSyncResponse {
   map: ComputeMapModifiersResponse;
+  actions: Inspector;
+}
+
+export interface InputResponse {
+  map: {
+    merged_tiles_json: string;
+    updated_enemies_json?: string;
+    new_collision_tiles?: string;
+    new_rooms_json?: string;
+  };
+  player: {
+    x: number;
+    y: number;
+  };
+  action: string;
+  message: string;
   actions: Inspector;
 }
 
@@ -258,6 +275,10 @@ export const computeMapModifiers = (worldState: WorldStatePayload, visualRange =
 // Sync (Unified Game Turn loop) — world-service owns tile state
 export const syncTurn = (playerX: number, playerY: number, currentEnemiesJson = '[]', visualRange = 8, level = 1) =>
   post<GameSyncResponse>('/sync', { playerX, playerY, currentEnemiesJson, visualRange, level });
+
+// Input — unified keypress handler (movement, actions, door exploration)
+export const sendInput = (key: string, currentEnemiesJson = '[]', visualRange = 8, level = 1) =>
+  post<InputResponse>('/input', { key, currentEnemiesJson, visualRange, level });
 
 // Health
 export async function healthCheck(): Promise<{ status: string }> {

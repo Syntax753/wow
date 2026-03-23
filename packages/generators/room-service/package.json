@@ -4,7 +4,7 @@
   "description": "Room generator — produces room/corridor structures in local coordinates via dice rolls",
   "main": "index.js",
   "scripts": {
-    "dev": "node index.js"
+    "dev": "node --watch index.js"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.10.x",

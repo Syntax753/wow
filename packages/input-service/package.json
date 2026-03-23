@@ -1,7 +1,7 @@
 {
-  "name": "@wow/render-service",
+  "name": "@wow/input-service",
   "version": "1.0.0",
-  "description": "Render microservice handling map layer composition",
+  "description": "Input microservice — validates keypresses against world state",
   "main": "index.js",
   "scripts": {
     "dev": "node --watch index.js"

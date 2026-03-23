@@ -35,8 +35,9 @@ async function compositeLayers(call, callback) {
     const minY = playerY - halfH;
 
     // 2. Initialize a 2D array of objects for the final UI state
-    let mapGrid = Array(viewportHeight).fill(null).map(() => 
-      Array(viewportWidth).fill(null).map(() => ({ char: ' ', visible: false }))
+    // visibility: 'hidden' (never seen), 'revealed' (seen before), 'visible' (in current FOV)
+    let mapGrid = Array(viewportHeight).fill(null).map(() =>
+      Array(viewportWidth).fill(null).map(() => ({ char: ' ', visible: false, revealed: false }))
     );
 
     // Sort all layers by ascending z-index
@@ -56,14 +57,25 @@ async function compositeLayers(call, callback) {
             mapGrid[localY][localX].char = char;
           }
         }
+      } else if (layer.layerType === 5) {
+        // Revealed Layer — tiles the player has ever seen (parsed is array of "x,y" strings)
+        for (const coord of parsed) {
+          const [cx, cy] = coord.split(',').map(Number);
+          const localX = cx - minX;
+          const localY = cy - minY;
+          if (localX >= 0 && localX < viewportWidth && localY >= 0 && localY < viewportHeight) {
+            mapGrid[localY][localX].revealed = true;
+          }
+        }
       } else if (layer.layerType === 10) {
-        // FOV Layer (parsed is array of "x,y" strings)
+        // FOV Layer — currently visible tiles (parsed is array of "x,y" strings)
         for (const coord of parsed) {
           const [cx, cy] = coord.split(',').map(Number);
           const localX = cx - minX;
           const localY = cy - minY;
           if (localX >= 0 && localX < viewportWidth && localY >= 0 && localY < viewportHeight) {
             mapGrid[localY][localX].visible = true;
+            mapGrid[localY][localX].revealed = true;
           }
         }
       } else if (layer.layerType === 20 || layer.layerType === 30) {
@@ -84,6 +96,8 @@ async function compositeLayers(call, callback) {
     const pLocalY = playerY - minY;
     if (pLocalX >= 0 && pLocalX < viewportWidth && pLocalY >= 0 && pLocalY < viewportHeight) {
       mapGrid[pLocalY][pLocalX].char = '@';
+      mapGrid[pLocalY][pLocalX].visible = true;
+      mapGrid[pLocalY][pLocalX].revealed = true;
     }
 
     console.log(`[RenderService] Compositing completed for viewport around ${playerX},${playerY}`);

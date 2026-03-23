@@ -71,11 +71,6 @@ export function createInitialState(): GameState {
         type: 'system',
         timestamp: Date.now(),
       },
-      {
-        text: 'Use arrow keys or WASD to move. Press E to explore doors.',
-        type: 'info',
-        timestamp: Date.now(),
-      },
     ],
     exploredDoors: new Set(),
   };

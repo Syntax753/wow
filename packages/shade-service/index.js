@@ -25,12 +25,15 @@ function computeVisibility(call, callback) {
     try { tilesDict = JSON.parse(tilesJson || "{}"); } catch { tilesDict = {}; }
 
     const visible = new Set();
-    
+
     function getTile(x, y) {
       return tilesDict[`${x},${y}`] || ' ';
     }
 
-    function bresenham(x0, y0, x1, y1) {
+    // Player tile is always visible
+    visible.add(`${px},${py}`);
+
+    function castRay(x0, y0, x1, y1) {
       let dx = Math.abs(x1 - x0);
       let dy = Math.abs(y1 - y0);
       let sx = (x0 < x1) ? 1 : -1;
@@ -41,15 +44,20 @@ function computeVisibility(call, callback) {
       let cy = y0;
 
       while (true) {
-        // Enforce maximum visual radius using euclidean or Chebyshev distance
+        // Enforce visual radius (Chebyshev distance)
         if (Math.abs(cx - px) > radius || Math.abs(cy - py) > radius) break;
-        
-        visible.add(`${cx},${cy}`);
-        
-        // Ray hits a solid wall — stop. Doors (+) are transparent to vision.
+
         const t = getTile(cx, cy);
-        if (t === '#') {
-          break; // Stop only at solid walls
+        visible.add(`${cx},${cy}`);
+
+        // Walls block further vision but are themselves visible
+        if (t === '#' && !(cx === x0 && cy === y0)) {
+          break;
+        }
+
+        // Unknown/empty space beyond the map also blocks
+        if (t === ' ' && !(cx === x0 && cy === y0)) {
+          break;
         }
 
         if (cx === x1 && cy === y1) break;
@@ -66,12 +74,12 @@ function computeVisibility(call, callback) {
     const maxY = py + radius;
 
     for (let x = minX; x <= maxX; x++) {
-      bresenham(px, py, x, minY);
-      bresenham(px, py, x, maxY);
+      castRay(px, py, x, minY);
+      castRay(px, py, x, maxY);
     }
-    for (let y = minY; y <= maxY; y++) {
-      bresenham(px, py, minX, y);
-      bresenham(px, py, maxX, y);
+    for (let y = minY + 1; y < maxY; y++) {
+      castRay(px, py, minX, y);
+      castRay(px, py, maxX, y);
     }
 
     // Stringify the array of coordinate strings

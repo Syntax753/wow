@@ -6,6 +6,7 @@ service HeroService {
   rpc GetHero (GetHeroRequest) returns (HeroState) {}
   rpc UpdateStat (UpdateStatRequest) returns (HeroState) {}
   rpc ResetHero (ResetHeroRequest) returns (HeroState) {}
+  rpc UpdatePosition (UpdatePositionRequest) returns (HeroState) {}
 }
 
 message TraceInfo {
@@ -38,6 +39,13 @@ message ResetHeroRequest {
   TraceInfo trace = 4;
 }
 
+message UpdatePositionRequest {
+  string hero_id = 1;
+  int32 x = 2;
+  int32 y = 3;
+  TraceInfo trace = 4;
+}
+
 message HeroState {
   string hero_id = 1;
   string name = 2;
@@ -51,5 +59,7 @@ message HeroState {
   int32 agility = 10;
   int32 wisdom = 11;
   int32 armor_class = 13;
+  int32 position_x = 15;
+  int32 position_y = 16;
   TraceInfo trace = 14;
 }

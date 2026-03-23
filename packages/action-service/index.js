@@ -51,7 +51,7 @@ function getAvailableActions(call, callback) {
       hasDoor = true;
       actions.push({
         key: 'o',
-        label: 'Open',
+        label: 'Open Door',
         description: `Open the door to the ${dir}`,
         enabled: true,
       });
@@ -61,7 +61,6 @@ function getAvailableActions(call, callback) {
     }
   }
 
-  // (Explore is listed last so combat/movement actions appear first)
   // Search action is always available in rooms
   const currentTile = getTileAt(tilesDict, playerX, playerY);
   if (currentTile === TILE.PLAYER || currentTile === TILE.FLOOR || currentTile === '@' || currentTile === '.') {
@@ -88,16 +87,6 @@ function getAvailableActions(call, callback) {
     description: 'Wait one turn',
     enabled: true,
   });
-
-  // Explore is last so movement/combat appears first
-  if (hasDoor) {
-    actions.push({
-      key: 'e',
-      label: 'Explore',
-      description: 'Explore beyond the door',
-      enabled: true,
-    });
-  }
 
   const overlay = {
     title: 'Available Actions',

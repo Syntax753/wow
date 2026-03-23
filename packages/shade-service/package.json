@@ -4,7 +4,7 @@
   "description": "Shade microservice handling raytraced visibility",
   "main": "index.js",
   "scripts": {
-    "dev": "node index.js"
+    "dev": "node --watch index.js"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.10.x",

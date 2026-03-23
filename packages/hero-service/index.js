@@ -20,6 +20,8 @@ function defaultHero(heroId, name, heroClass) {
     wisdom: 10,
     luck: 10,
     armorClass: 10,
+    positionX: 0,
+    positionY: 0,
   };
 }
 
@@ -89,9 +91,29 @@ function resetHero(call, callback) {
   callback(null, { ...heroes[id], trace });
 }
 
+function updatePosition(call, callback) {
+  const trace = {
+    traceId: call.request.trace?.traceId,
+    spanId: call.request.trace?.spanId,
+    timeStart: Date.now(),
+    serviceName: 'hero-service',
+    data: JSON.stringify({ x: call.request.x, y: call.request.y }),
+    subSpans: []
+  };
+
+  const { heroId, x, y } = call.request;
+  const id = heroId || 'default';
+  if (!heroes[id]) {
+    heroes[id] = defaultHero(id);
+  }
+  heroes[id].positionX = x;
+  heroes[id].positionY = y;
+  callback(null, { ...heroes[id], trace });
+}
+
 function main() {
   const server = new grpc.Server();
-  server.addService(HeroService.service, { getHero, updateStat, resetHero });
+  server.addService(HeroService.service, { getHero, updateStat, resetHero, updatePosition });
   server.bindAsync(
     `0.0.0.0:${PORT}`,
     grpc.ServerCredentials.createInsecure(),

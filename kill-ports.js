@@ -12,6 +12,7 @@ const ports = [
   50058, // RenderService
   50059, // EnemyService
   50060, // WorldService
+  50061, // InputService
   8080, // React Frontend
 ];
 

@@ -4,8 +4,9 @@ const { WorldService } = require('@wow/proto');
 const PORT = process.env.WORLD_SERVICE_PORT || 50060;
 
 // ── Authoritative world state (in-memory) ──────────────────────────────
-let worldTiles = {};   // {"x,y": char}
-let worldRooms = [];   // [{x, y, width, height, description}]
+let worldTiles = {};     // {"x,y": char}
+let worldRooms = [];     // [{x, y, width, height, description}]
+let revealedTiles = new Set();  // Set of "x,y" coords the player has ever seen
 
 // ── Collision detection ────────────────────────────────────────────────
 // Extracted from room-service. Corridors use relaxed rules: they can
@@ -139,23 +140,70 @@ function placeStructure(call, callback) {
     let originX = 0, originY = 0;
 
     if (structureType === 'corridor') {
-      // Corridor placement
+      // Corridor placement — rebuild tiles based on actual direction
+      // The generator may have rolled a random direction, but we override
+      // based on anchor context (forced direction).
       const dir = forced || direction || 'N';
-      let rx = anchorX, ry = anchorY;
-      const length = (dir === 'E' || dir === 'W') ? width : height;
-      let w = 1, h = 1;
+      const isVertical = dir === 'N' || dir === 'S';
+      const corridorLength = Math.max(width, height); // length is always the larger dim
 
-      if (dir === 'N') { ry = anchorY - length + 1; w = 1; h = length; }
-      else if (dir === 'S') { ry = anchorY; w = 1; h = length; }
-      else if (dir === 'W') { rx = anchorX - length + 1; w = length; h = 1; }
-      else if (dir === 'E') { rx = anchorX; w = length; h = 1; }
+      // Recalculate actual dimensions based on the placement direction
+      const actualW = isVertical ? 3 : corridorLength;
+      const actualH = isVertical ? corridorLength : 3;
 
-      if (canFit('corridor', rx, ry, w, h, anchorX, anchorY)) {
+      // Rebuild local tiles for the actual direction
+      const corrTiles = {};
+      for (let y = 0; y < actualH; y++) {
+        for (let x = 0; x < actualW; x++) {
+          if (isVertical) {
+            corrTiles[`${x},${y}`] = (x === 1) ? '.' : '#';
+          } else {
+            corrTiles[`${x},${y}`] = (y === 1) ? '.' : '#';
+          }
+        }
+      }
+      // Door at far end
+      if (isVertical) {
+        if (dir === 'N') corrTiles[`1,0`] = '+';
+        else corrTiles[`1,${actualH - 1}`] = '+';
+      } else {
+        if (dir === 'W') corrTiles[`0,1`] = '+';
+        else corrTiles[`${actualW - 1},1`] = '+';
+      }
+
+      // Position the corridor so the anchor aligns with the floor center
+      let rx, ry;
+      if (dir === 'N') {
+        rx = anchorX - 1;
+        ry = anchorY - actualH + 1;
+      } else if (dir === 'S') {
+        rx = anchorX - 1;
+        ry = anchorY;
+      } else if (dir === 'W') {
+        rx = anchorX - actualW + 1;
+        ry = anchorY - 1;
+      } else {
+        rx = anchorX;
+        ry = anchorY - 1;
+      }
+
+      if (canFit('corridor', rx, ry, actualW, actualH, anchorX, anchorY)) {
         fitSuccess = true;
         originX = rx;
         originY = ry;
-        writeCorridorTiles(rx, ry, dir, length);
-        console.log(`[WorldService] Corridor placed: ${length} tiles ${dir} at ${rx},${ry}`);
+        // Write rebuilt tiles to world coordinates
+        for (const [coord, ch] of Object.entries(corrTiles)) {
+          const [lx, ly] = coord.split(',').map(Number);
+          const wx = rx + lx;
+          const wy = ry + ly;
+          if (wx === anchorX && wy === anchorY) continue;
+          const existing = worldTiles[`${wx},${wy}`] || ' ';
+          if (existing === '.' || existing === '+') continue;
+          worldTiles[`${wx},${wy}`] = ch;
+        }
+        // Convert anchor door to floor (door has been opened)
+        worldTiles[`${anchorX},${anchorY}`] = '.';
+        console.log(`[WorldService] Corridor placed: ${actualW}x${actualH} ${dir} at ${rx},${ry}`);
       } else {
         console.log(`[WorldService] Corridor placement failed at anchor ${anchorX},${anchorY}`);
       }
@@ -180,6 +228,8 @@ function placeStructure(call, callback) {
           }
 
           writeRoomTiles(rx, ry, width, height, worldDoors);
+          // Convert anchor door to floor (door has been opened)
+          worldTiles[`${anchorX},${anchorY}`] = '.';
           worldRooms.push({ x: rx, y: ry, width, height, description });
           console.log(`[WorldService] Room placed: ${width}x${height} at ${rx},${ry}`);
           break;
@@ -219,8 +269,37 @@ function getWorldState(call, callback) {
   callback(null, {
     tilesJson: JSON.stringify(worldTiles),
     roomsJson: JSON.stringify(worldRooms),
+    revealedJson: JSON.stringify([...revealedTiles]),
     trace
   });
+}
+
+// ── RPC: RevealTiles ──────────────────────────────────────────────────
+// Merges currently visible coords into the persistent revealed set.
+function revealTiles(call, callback) {
+  const trace = {
+    traceId: call.request.trace?.traceId,
+    spanId: call.request.trace?.spanId,
+    timeStart: Date.now(),
+    serviceName: 'world-service',
+    data: '',
+    subSpans: []
+  };
+
+  try {
+    const visibleCoords = JSON.parse(call.request.visibleCoordsJson || '[]');
+    for (const coord of visibleCoords) {
+      revealedTiles.add(coord);
+    }
+
+    callback(null, {
+      revealedJson: JSON.stringify([...revealedTiles]),
+      trace
+    });
+  } catch (err) {
+    console.error('[WorldService] Error revealing tiles:', err.message);
+    callback(err);
+  }
 }
 
 // ── RPC: InitWorld ─────────────────────────────────────────────────────
@@ -250,6 +329,7 @@ function initWorld(call, callback) {
     // Clear world state
     worldTiles = {};
     worldRooms = [];
+    revealedTiles = new Set();
 
     // Write tiles from local coords to world coords
     for (const [coord, ch] of Object.entries(localTiles)) {
@@ -295,6 +375,7 @@ function resetWorld(call, callback) {
 
   worldTiles = {};
   worldRooms = [];
+  revealedTiles = new Set();
   console.log('[WorldService] World state reset');
 
   callback(null, { success: true, trace });
@@ -307,7 +388,8 @@ function main() {
     placeStructure,
     getWorldState,
     initWorld,
-    resetWorld
+    resetWorld,
+    revealTiles
   });
   server.bindAsync(
     `0.0.0.0:${PORT}`,
