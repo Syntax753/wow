@@ -5,7 +5,7 @@
  */
 const http = require('http');
 const crypto = require('crypto');
-const { grpc, DiceService, DndService, HeroService, InventoryService, ActionService } = require('@wow/proto');
+const { grpc, DiceService, DndService, HeroService, InventoryService, ActionService, WorldService } = require('@wow/proto');
 
 const API_PORT = process.env.API_PORT || 3001;
 const DICE_URL = process.env.DICE_SERVICE_URL || 'localhost:50051';
@@ -13,12 +13,14 @@ const DND_URL = process.env.DND_SERVICE_URL || 'localhost:50052';
 const HERO_URL = process.env.HERO_SERVICE_URL || 'localhost:50053';
 const INVENTORY_URL = process.env.INVENTORY_SERVICE_URL || 'localhost:50054';
 const ACTION_URL = process.env.ACTION_SERVICE_URL || 'localhost:50055';
+const WORLD_URL = process.env.WORLD_SERVICE_URL || 'localhost:50060';
 
 const diceClient = new DiceService(DICE_URL, grpc.credentials.createInsecure());
 const dndClient = new DndService(DND_URL, grpc.credentials.createInsecure());
 const heroClient = new HeroService(HERO_URL, grpc.credentials.createInsecure());
 const inventoryClient = new InventoryService(INVENTORY_URL, grpc.credentials.createInsecure());
 const actionClient = new ActionService(ACTION_URL, grpc.credentials.createInsecure());
+const worldClient = new WorldService(WORLD_URL, grpc.credentials.createInsecure());
 
 function cloneReqRes(obj) {
   const clone = { ...obj };
@@ -124,31 +126,13 @@ const server = http.createServer(async (req, res) => {
       ], rootSpan));
 
     // === DnD Service ===
-    } else if (req.url === '/api/dnd/room' && req.method === 'POST') {
-      const result = await grpcCall(dndClient, 'dnd-service', 'generateRoom', { level: body.level || 1 }, rootSpan);
-      rootSpan.timeEnd = Date.now();
-      rootSpan.dataRet = cloneReqRes(result);
-      json(res, 200, envelope(result, [
-        logEntry(`${result.description} (${result.width}x${result.height})`, 'discovery', 'dnd'),
-      ], rootSpan));
-
-    } else if (req.url === '/api/dnd/corridor' && req.method === 'POST') {
-      const result = await grpcCall(dndClient, 'dnd-service', 'generateCorridor', { level: body.level || 1 }, rootSpan);
-      rootSpan.timeEnd = Date.now();
-      rootSpan.dataRet = cloneReqRes(result);
-      json(res, 200, envelope(result, [
-        logEntry(`Corridor ${result.direction} (${result.length} tiles): ${result.description}`, 'discovery', 'dnd'),
-      ], rootSpan));
-
     } else if (req.url === '/api/dnd/explore' && req.method === 'POST') {
-      const result = await grpcCall(dndClient, 'dnd-service', 'exploreDoor', { 
+      const result = await grpcCall(dndClient, 'dnd-service', 'exploreDoor', {
         level: body.level || 1,
-        tilesJson: body.tilesJson || "{}",
         anchorX: body.doorX || 0,
         anchorY: body.doorY || 0,
         playerX: body.playerX || 0,
         playerY: body.playerY || 0,
-        roomsJson: body.roomsJson || '[]',
         currentEnemiesJson: body.currentEnemiesJson || '[]',
         visualRange: body.visualRange || 8
       }, rootSpan);
@@ -238,25 +222,27 @@ const server = http.createServer(async (req, res) => {
 
     // === Game Loop Sync (Map Modifiers + Actions in one unified trace) ===
     } else if (req.url === '/api/sync' && req.method === 'POST') {
-      const dndPromise = grpcCall(dndClient, 'dnd-service', 'computeMapModifiers', {
-        tilesJson: body.tilesJson || "{}",
-        roomsJson: body.roomsJson || "[]",
+      // Run DnD map modifiers (will init world if needed)
+      const dndResult = await grpcCall(dndClient, 'dnd-service', 'computeMapModifiers', {
         playerX: body.playerX || 0,
         playerY: body.playerY || 0,
         visualRange: body.visualRange || 8,
         currentEnemiesJson: body.currentEnemiesJson || "[]",
       }, rootSpan);
-      
-      const actionPromise = grpcCall(actionClient, 'action-service', 'getAvailableActions', {
-        tilesJson: body.tilesJson || "{}",
+
+      // Fetch world state from world-service for action-service
+      const worldState = await grpcCall(worldClient, 'world-service', 'getWorldState', {}, rootSpan);
+      let worldRooms = [];
+      try { worldRooms = JSON.parse(worldState.roomsJson || '[]'); } catch {}
+
+      const actionResult = await grpcCall(actionClient, 'action-service', 'getAvailableActions', {
+        tilesJson: worldState.tilesJson || '{}',
         playerX: body.playerX || 0,
         playerY: body.playerY || 0,
         level: body.level || 1,
-        rooms: body.rooms || [],
+        rooms: worldRooms,
         heroId: 'default',
       }, rootSpan);
-
-      const [dndResult, actionResult] = await Promise.all([dndPromise, actionPromise]);
       rootSpan.timeEnd = Date.now();
       rootSpan.dataRet = cloneReqRes({ dndResult, actionResult });
       
@@ -276,7 +262,7 @@ const server = http.createServer(async (req, res) => {
     // === Health ===
     } else if (req.url === '/api/health') {
       rootSpan.timeEnd = Date.now();
-      const resData = { status: 'ok', services: ['dice', 'dnd', 'hero', 'inventory', 'action'] };
+      const resData = { status: 'ok', services: ['dice', 'dnd', 'hero', 'inventory', 'action', 'world'] };
       rootSpan.dataRet = JSON.stringify(resData);
       json(res, 200, resData);
 
@@ -295,5 +281,5 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(API_PORT, () => {
   console.log(`[WoW API] Running on port ${API_PORT}`);
-  console.log(`[WoW API] Services: dice(${DICE_URL}) dnd(${DND_URL}) hero(${HERO_URL}) inventory(${INVENTORY_URL}) action(${ACTION_URL})`);
+  console.log(`[WoW API] Services: dice(${DICE_URL}) dnd(${DND_URL}) hero(${HERO_URL}) inventory(${INVENTORY_URL}) action(${ACTION_URL}) world(${WORLD_URL})`);
 });

@@ -58,6 +58,7 @@ export interface ExploreDoorResponse {
   newTilesJson: string;
   mergedTilesJson?: string;
   updatedEnemiesJson?: string;
+  newRoomsJson?: string;
 }
 
 // === Hero ===
@@ -107,12 +108,11 @@ export interface ActionsResponse {
 }
 
 // === World State (for serialization) ===
+// Slimmed down — world-service is now the authoritative source for tiles/rooms
 export interface WorldStatePayload {
   level: number;
-  tilesJson: string;
   playerX: number;
   playerY: number;
-  rooms: { x: number; y: number; width: number; height: number; description: string }[];
 }
 
 // === Action & Inspector Overlay ===
@@ -228,14 +228,8 @@ export const rollDice = (dice: string[] = ['1d6']) =>
   post<DiceResponse>('/dice/roll', { dice });
 
 // DnD
-export const generateRoom = (level = 1) =>
-  post<RoomResponse>('/dnd/room', { level });
-
-export const generateCorridor = (level = 1) =>
-  post<CorridorResponse>('/dnd/corridor', { level });
-
-export const exploreDoor = (doorX: number, doorY: number, worldState: WorldStatePayload) =>
-  post<ExploreDoorResponse>('/dnd/explore', { doorX, doorY, ...worldState });
+export const exploreDoor = (doorX: number, doorY: number, playerX: number, playerY: number, currentEnemiesJson = '[]', visualRange = 8, level = 1) =>
+  post<ExploreDoorResponse>('/dnd/explore', { doorX, doorY, playerX, playerY, currentEnemiesJson, visualRange, level });
 
 // Hero
 export const getHero = () => get<HeroState>('/hero');
@@ -261,9 +255,9 @@ export const getAvailableActions = (worldState: WorldStatePayload) =>
 export const computeMapModifiers = (worldState: WorldStatePayload, visualRange = 8) =>
   post<ComputeMapModifiersResponse>('/dnd/map-modifiers', { ...worldState, visualRange });
 
-// Sync (Unified Game Turn loop)
-export const syncTurn = (worldState: WorldStatePayload, visualRange = 8) =>
-  post<GameSyncResponse>('/sync', { ...worldState, visualRange });
+// Sync (Unified Game Turn loop) — world-service owns tile state
+export const syncTurn = (playerX: number, playerY: number, currentEnemiesJson = '[]', visualRange = 8, level = 1) =>
+  post<GameSyncResponse>('/sync', { playerX, playerY, currentEnemiesJson, visualRange, level });
 
 // Health
 export async function healthCheck(): Promise<{ status: string }> {

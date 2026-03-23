@@ -1,4 +1,4 @@
-const { grpc, DiceService, DndService, RoomService, RenderService, EnemyService, ShadeService } = require('@wow/proto');
+const { grpc, DiceService, DndService, RoomService, RenderService, EnemyService, ShadeService, WorldService } = require('@wow/proto');
 const crypto = require('crypto');
 
 const PORT = process.env.DND_SERVICE_PORT || '50052';
@@ -7,36 +7,14 @@ const ROOM_SERVICE_URL = process.env.ROOM_SERVICE_URL || 'localhost:50056';
 const RENDER_SERVICE_URL = process.env.RENDER_SERVICE_URL || 'localhost:50058';
 const ENEMY_SERVICE_URL = process.env.ENEMY_SERVICE_URL || 'localhost:50059';
 const SHADE_SERVICE_URL = process.env.SHADE_SERVICE_URL || 'localhost:50057';
+const WORLD_SERVICE_URL = process.env.WORLD_SERVICE_URL || 'localhost:50060';
 
-// Create a client to talk to the DiceService
-const diceClient = new DiceService(
-  DICE_SERVICE_URL,
-  grpc.credentials.createInsecure()
-);
-
-// Create a client to talk to the RoomService
-const roomClient = new RoomService(
-  ROOM_SERVICE_URL,
-  grpc.credentials.createInsecure()
-);
-
-// Create a client to talk to the RenderService
-const renderClient = new RenderService(
-  RENDER_SERVICE_URL,
-  grpc.credentials.createInsecure()
-);
-
-// Create a client to talk to the EnemyService
-const enemyClient = new EnemyService(
-  ENEMY_SERVICE_URL,
-  grpc.credentials.createInsecure()
-);
-
-// Create a client to talk to the ShadeService
-const shadeClient = new ShadeService(
-  SHADE_SERVICE_URL,
-  grpc.credentials.createInsecure()
-);
+const diceClient = new DiceService(DICE_SERVICE_URL, grpc.credentials.createInsecure());
+const roomClient = new RoomService(ROOM_SERVICE_URL, grpc.credentials.createInsecure());
+const renderClient = new RenderService(RENDER_SERVICE_URL, grpc.credentials.createInsecure());
+const enemyClient = new EnemyService(ENEMY_SERVICE_URL, grpc.credentials.createInsecure());
+const shadeClient = new ShadeService(SHADE_SERVICE_URL, grpc.credentials.createInsecure());
+const worldClient = new WorldService(WORLD_SERVICE_URL, grpc.credentials.createInsecure());
 
 function cloneReqRes(obj) {
   const clone = { ...obj };
@@ -44,81 +22,50 @@ function cloneReqRes(obj) {
   return JSON.stringify(clone);
 }
 
-function computeVisibilityAsync(req, parentTrace) {
-  return new Promise((resolve, reject) => {
-    const callerIdentity = {
-      traceId: parentTrace ? parentTrace.traceId : crypto.randomUUID(),
-      spanId: crypto.randomUUID(),
-    };
-    
-    const requestWithTrace = { ...req, trace: callerIdentity };
+// ── Async wrappers with trace propagation ──────────────────────────────
 
-    shadeClient.ComputeVisibility(requestWithTrace, (err, response) => {
-      if (err) {
-        const errSpan = {
-          ...callerIdentity,
-          serviceName: 'shade-service',
-          timeEnd: Date.now(),
-          dataRet: JSON.stringify({ error: err.message })
-        };
-        if (parentTrace) parentTrace.subSpans.push(errSpan);
-        reject(err);
-      } else {
-        const childTrace = response.trace || { ...callerIdentity, serviceName: 'shade-service' };
-        childTrace.timeEnd = Date.now();
-        childTrace.dataRet = cloneReqRes(response);
-        if (parentTrace) parentTrace.subSpans.push(childTrace);
-        resolve(response);
-      }
+function makeAsyncCall(client, method, serviceName) {
+  return function(req, parentTrace) {
+    return new Promise((resolve, reject) => {
+      const callerIdentity = {
+        traceId: parentTrace ? parentTrace.traceId : crypto.randomUUID(),
+        spanId: crypto.randomUUID(),
+      };
+
+      const requestWithTrace = { ...req, trace: callerIdentity };
+
+      client[method](requestWithTrace, (err, response) => {
+        if (err) {
+          const errSpan = {
+            ...callerIdentity,
+            serviceName,
+            timeEnd: Date.now(),
+            dataRet: JSON.stringify({ error: err.message })
+          };
+          if (parentTrace) parentTrace.subSpans.push(errSpan);
+          reject(err);
+        } else {
+          const childTrace = response.trace || { ...callerIdentity, serviceName };
+          childTrace.timeEnd = Date.now();
+          childTrace.dataRet = cloneReqRes(response);
+          if (parentTrace) parentTrace.subSpans.push(childTrace);
+          resolve(response);
+        }
+      });
     });
-  });
+  };
 }
 
-function processEnemiesAsync(req, parentTrace) {
+const rollDiceAsync = function(dice, parentTrace) {
   return new Promise((resolve, reject) => {
     const callerIdentity = {
       traceId: parentTrace ? parentTrace.traceId : crypto.randomUUID(),
       spanId: crypto.randomUUID(),
     };
-    
-    const requestWithTrace = { ...req, trace: callerIdentity };
 
-    enemyClient.ProcessEnemies(requestWithTrace, (err, response) => {
-      if (err) {
-        const errSpan = {
-          ...callerIdentity,
-          serviceName: 'enemy-service',
-          timeEnd: Date.now(),
-          dataRet: JSON.stringify({ error: err.message })
-        };
-        if (parentTrace) parentTrace.subSpans.push(errSpan);
-        reject(err);
-      } else {
-        const childTrace = response.trace || { ...callerIdentity, serviceName: 'enemy-service' };
-        childTrace.timeEnd = Date.now();
-        childTrace.dataRet = cloneReqRes(response);
-        if (parentTrace) parentTrace.subSpans.push(childTrace);
-        resolve(response);
-      }
-    });
-  });
-}
-
-function rollDiceAsync(dice, parentTrace) {
-  return new Promise((resolve, reject) => {
-    const callerIdentity = {
-      traceId: parentTrace ? parentTrace.traceId : crypto.randomUUID(),
-      spanId: crypto.randomUUID(),
-    };
-    
     diceClient.rollDice({ dice, trace: callerIdentity }, (err, response) => {
       if (err) {
-        const errSpan = {
-          ...callerIdentity,
-          serviceName: 'dice-service',
-          timeEnd: Date.now(),
-          dataRet: JSON.stringify({ error: err.message })
-        };
+        const errSpan = { ...callerIdentity, serviceName: 'dice-service', timeEnd: Date.now(), dataRet: JSON.stringify({ error: err.message }) };
         if (parentTrace) parentTrace.subSpans.push(errSpan);
         reject(err);
       } else {
@@ -130,110 +77,73 @@ function rollDiceAsync(dice, parentTrace) {
       }
     });
   });
+};
+
+const generateRoomAsync = makeAsyncCall(roomClient, 'GenerateRoom', 'room-service');
+const generateCorridorAsync = makeAsyncCall(roomClient, 'GenerateCorridor', 'room-service');
+const compositeLayersAsync = makeAsyncCall(renderClient, 'CompositeLayers', 'render-service');
+const processEnemiesAsync = makeAsyncCall(enemyClient, 'ProcessEnemies', 'enemy-service');
+const computeVisibilityAsync = makeAsyncCall(shadeClient, 'ComputeVisibility', 'shade-service');
+const getWorldStateAsync = makeAsyncCall(worldClient, 'GetWorldState', 'world-service');
+const initWorldAsync = makeAsyncCall(worldClient, 'InitWorld', 'world-service');
+const placeStructureAsync = makeAsyncCall(worldClient, 'PlaceStructure', 'world-service');
+const resetWorldAsync = makeAsyncCall(worldClient, 'ResetWorld', 'world-service');
+
+// ── Helper: build layers from world tiles and run render pipeline ──────
+async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, currentEnemiesJson, trace) {
+  let tilesDict;
+  try { tilesDict = JSON.parse(tilesJsonStr || '{}'); } catch { tilesDict = {}; }
+
+  // Split raw tiles into Layer 0 (Base) and Layer 20 (Interactables)
+  const baseMap = {};
+  const interactables = {};
+  for (const [coord, ch] of Object.entries(tilesDict)) {
+    if (ch === '#' || ch === '.' || ch === ' ') {
+      baseMap[coord] = ch;
+    } else {
+      baseMap[coord] = '.';
+      interactables[coord] = ch;
+    }
+  }
+
+  const layer0 = { layerType: 0, tilesJson: JSON.stringify(baseMap) };
+  const layer20 = { layerType: 20, tilesJson: JSON.stringify(interactables) };
+
+  // Enemy layer
+  const enemyResponse = await processEnemiesAsync({
+    tilesJson: tilesJsonStr,
+    roomsJson: roomsJsonStr,
+    playerX: px,
+    playerY: py,
+    currentEnemiesJson: currentEnemiesJson || '[]'
+  }, trace);
+
+  const layer30 = { layerType: 30, tilesJson: enemyResponse.enemyLayer?.tilesJson || '{}' };
+
+  // FOV layer
+  const shadeResponse = await computeVisibilityAsync({
+    tilesJson: tilesJsonStr,
+    playerX: px,
+    playerY: py,
+    visualRange: visualRange || 8
+  }, trace);
+
+  const layer10 = { layerType: 10, tilesJson: shadeResponse.tilesJson };
+
+  // Composite via render-service
+  const renderResponse = await compositeLayersAsync({
+    playerX: px,
+    playerY: py,
+    layers: [layer0, layer10, layer20, layer30]
+  }, trace);
+
+  return {
+    mergedTilesJson: renderResponse.mergedTilesJson,
+    updatedEnemiesJson: enemyResponse.updatedEnemiesJson || ''
+  };
 }
 
-function generateRoomAsync(req, parentTrace) {
-  return new Promise((resolve, reject) => {
-    const callerIdentity = {
-      traceId: parentTrace ? parentTrace.traceId : crypto.randomUUID(),
-      spanId: crypto.randomUUID(),
-    };
-    const requestPayload = { 
-      level: req.level, 
-      trace: callerIdentity,
-      tilesJson: req.tilesJson,
-      anchorX: req.anchorX,
-      anchorY: req.anchorY
-    };
-    
-    roomClient.GenerateRoom(requestPayload, (err, response) => {
-      if (err) {
-        const errSpan = {
-          ...callerIdentity,
-          serviceName: 'room-service',
-          timeEnd: Date.now(),
-          dataRet: JSON.stringify({ error: err.message })
-        };
-        if (parentTrace) parentTrace.subSpans.push(errSpan);
-        reject(err);
-      } else {
-        const childTrace = response.trace || { ...callerIdentity, serviceName: 'room-service' };
-        childTrace.timeEnd = Date.now();
-        childTrace.dataRet = cloneReqRes(response);
-        if (parentTrace) parentTrace.subSpans.push(childTrace);
-        resolve(response);
-      }
-    });
-  });
-}
-
-function generateCorridorAsync(req, parentTrace) {
-  return new Promise((resolve, reject) => {
-    const callerIdentity = {
-      traceId: parentTrace ? parentTrace.traceId : crypto.randomUUID(),
-      spanId: crypto.randomUUID(),
-    };
-    const requestPayload = { 
-      level: req.level, 
-      trace: callerIdentity,
-      tilesJson: req.tilesJson,
-      anchorX: req.anchorX,
-      anchorY: req.anchorY
-    };
-    
-    roomClient.GenerateCorridor(requestPayload, (err, response) => {
-      if (err) {
-        const errSpan = {
-          ...callerIdentity,
-          serviceName: 'room-service',
-          timeEnd: Date.now(),
-          dataRet: JSON.stringify({ error: err.message })
-        };
-        if (parentTrace) parentTrace.subSpans.push(errSpan);
-        reject(err);
-      } else {
-        const childTrace = response.trace || { ...callerIdentity, serviceName: 'room-service' };
-        childTrace.timeEnd = Date.now();
-        childTrace.dataRet = cloneReqRes(response);
-        if (parentTrace) parentTrace.subSpans.push(childTrace);
-        resolve(response);
-      }
-    });
-  });
-}
-
-// Eliminated Shade and Enemy async wrappers
-
-function compositeLayersAsync(req, parentTrace) {
-  return new Promise((resolve, reject) => {
-    const callerIdentity = {
-      traceId: parentTrace ? parentTrace.traceId : crypto.randomUUID(),
-      spanId: crypto.randomUUID(),
-    };
-    
-    const requestWithTrace = { ...req, trace: callerIdentity };
-
-    renderClient.CompositeLayers(requestWithTrace, (err, response) => {
-      if (err) {
-        const errSpan = {
-          ...callerIdentity,
-          serviceName: 'render-service',
-          timeEnd: Date.now(),
-          dataRet: JSON.stringify({ error: err.message })
-        };
-        if (parentTrace) parentTrace.subSpans.push(errSpan);
-        reject(err);
-      } else {
-        const childTrace = response.trace || { ...callerIdentity, serviceName: 'render-service' };
-        childTrace.timeEnd = Date.now();
-        childTrace.dataRet = cloneReqRes(response);
-        if (parentTrace) parentTrace.subSpans.push(childTrace);
-        resolve(response);
-      }
-    });
-  });
-}
-
+// ── RPC: ExploreDoor ───────────────────────────────────────────────────
 async function exploreDoor(call, callback) {
   const trace = {
     traceId: call.request.trace?.traceId,
@@ -250,153 +160,95 @@ async function exploreDoor(call, callback) {
     const score = typeRoll.grandTotal;
     const isRoom = score <= 8; // 1-8 Room, 9-20 Corridor
 
-    let width, height, description, newTilesJson;
-    let doors = [];
-    let originX = 0, originY = 0;
-    let fitSuccess = false;
-    let structureType = isRoom ? 'room' : 'corridor';
-
     const px = call.request.playerX ?? 0;
     const py = call.request.playerY ?? 0;
+    const anchorX = call.request.anchorX;
+    const anchorY = call.request.anchorY;
+
+    let structureType, width, height, description, doors, direction;
 
     if (isRoom) {
-      const roomRes = await generateRoomAsync({
-        level: call.request.level,
-        tilesJson: call.request.tilesJson,
-        anchorX: call.request.anchorX,
-        anchorY: call.request.anchorY
-      }, trace);
+      // 2a. Generate room structure (local coords) from room-service
+      const roomRes = await generateRoomAsync({ level: call.request.level }, trace);
+      structureType = 'room';
       width = roomRes.width;
       height = roomRes.height;
       description = roomRes.description;
       doors = roomRes.doors || [];
-      fitSuccess = roomRes.fitSuccess;
-      originX = roomRes.originX;
-      originY = roomRes.originY;
-      newTilesJson = roomRes.newTilesJson || call.request.tilesJson;
-      console.log(`[DndService] Orchestrated Room: ${width}x${height} | fit: ${fitSuccess} at ${originX},${originY}`);
+      direction = '';
     } else {
-      const corrRes = await generateCorridorAsync({
-        level: call.request.level,
-        tilesJson: call.request.tilesJson,
-        anchorX: call.request.anchorX,
-        anchorY: call.request.anchorY
-      }, trace);
+      // 2b. Generate corridor structure (local coords) from room-service
+      const corrRes = await generateCorridorAsync({ level: call.request.level }, trace);
+      structureType = 'corridor';
       const isVertical = corrRes.direction === 'N' || corrRes.direction === 'S';
       width = isVertical ? 1 : corrRes.length;
       height = isVertical ? corrRes.length : 1;
       description = corrRes.description;
-      fitSuccess = corrRes.fitSuccess;
-      originX = corrRes.originX;
-      originY = corrRes.originY;
-      newTilesJson = corrRes.newTilesJson || call.request.tilesJson;
-      console.log(`[DndService] Orchestrated Corridor: ${width}x${height} | fit: ${fitSuccess} at ${originX},${originY}`);
+      doors = [];
+      direction = corrRes.direction;
     }
 
-    // If it didn't fit, return immediately with no map changes
-    if (!fitSuccess) {
+    // 3. Place structure into the world via world-service
+    const placeRes = await placeStructureAsync({
+      structureType,
+      width,
+      height,
+      description,
+      tilesJson: '{}', // world-service has its own state
+      doors,
+      anchorX,
+      anchorY,
+      direction
+    }, trace);
+
+    if (!placeRes.fitSuccess) {
       callback(null, {
-        structureType, width: 0, height: 0, description, doors: [], trace,
-        fitSuccess: false, originX, originY,
-        newTilesJson: call.request.tilesJson,
+        structureType, width: 0, height: 0,
+        description: 'The doorway collapses into solid rock...',
+        doors: [], trace,
+        fitSuccess: false,
+        originX: 0, originY: 0,
+        newTilesJson: placeRes.tilesJson,
         mergedTilesJson: '',
-        updatedEnemiesJson: ''
+        updatedEnemiesJson: '',
+        newRoomsJson: placeRes.roomsJson
       });
       return;
     }
 
-    // 2. Build base layer from new map
-    let tilesDict;
-    try { tilesDict = JSON.parse(newTilesJson || '{}'); } catch { tilesDict = {}; }
+    console.log(`[DndService] Orchestrated ${structureType}: fit at ${placeRes.originX},${placeRes.originY}`);
 
-    const baseMap = {};
-    const interactables = {};
-    for (const [coord, ch] of Object.entries(tilesDict)) {
-      if (ch === '#' || ch === '.' || ch === ' ') {
-        baseMap[coord] = ch;
-      } else {
-        baseMap[coord] = '.';
-        interactables[coord] = ch;
-      }
-    }
-
-    const layer0 = { layerType: 0, tilesJson: JSON.stringify(baseMap) };
-    const layer20 = { layerType: 20, tilesJson: JSON.stringify(interactables) };
-
-    // 3. Enemy layer
-    const roomsJson = call.request.roomsJson || '[]';
-    const enemyResponse = await processEnemiesAsync({
-      tilesJson: newTilesJson,
-      roomsJson,
-      playerX: px,
-      playerY: py,
-      currentEnemiesJson: call.request.currentEnemiesJson || '[]'
-    }, trace);
-
-    const layer30 = { layerType: 30, tilesJson: enemyResponse.enemyLayer?.tilesJson || '{}' };
-
-    // 4. FOV layer
-    const shadeResponse = await computeVisibilityAsync({
-      tilesJson: newTilesJson,
-      playerX: px,
-      playerY: py,
-      visualRange: call.request.visualRange || 8
-    }, trace);
-
-    const layer10 = { layerType: 10, tilesJson: shadeResponse.tilesJson };
-
-    // 5. Composite via render-service
-    const renderResponse = await compositeLayersAsync({
-      playerX: px,
-      playerY: py,
-      layers: [layer0, layer10, layer20, layer30]
-    }, trace);
+    // 4. Run render pipeline with updated world state
+    const rendered = await buildAndRender(
+      placeRes.tilesJson, placeRes.roomsJson,
+      px, py,
+      call.request.visualRange,
+      call.request.currentEnemiesJson,
+      trace
+    );
 
     callback(null, {
-      structureType, width, height, description, doors, trace,
-      fitSuccess,
-      originX,
-      originY,
-      newTilesJson,
-      mergedTilesJson: renderResponse.mergedTilesJson,
-      updatedEnemiesJson: enemyResponse.updatedEnemiesJson || ''
+      structureType,
+      width,
+      height,
+      description,
+      doors,
+      trace,
+      fitSuccess: true,
+      originX: placeRes.originX,
+      originY: placeRes.originY,
+      newTilesJson: placeRes.tilesJson,
+      mergedTilesJson: rendered.mergedTilesJson,
+      updatedEnemiesJson: rendered.updatedEnemiesJson,
+      newRoomsJson: placeRes.roomsJson
     });
   } catch (err) {
     console.error('[DndService] Error orchestrating door explore:', err.message);
     callback(err);
   }
-
 }
 
-// Stub passthrough wrappers in case frontend somehow calls them directly
-async function generateRoomPassthrough(call, callback) {
-  try {
-     const res = await generateRoomAsync({
-       level: call.request.level,
-       mapWidth: call.request.mapWidth,
-       mapHeight: call.request.mapHeight,
-       tiles: call.request.tiles,
-       anchorX: call.request.anchor_x,
-       anchorY: call.request.anchor_y
-     }, call.request.trace);
-     callback(null, res);
-  } catch(e) { callback(e); }
-}
-
-async function generateCorridorPassthrough(call, callback) {
-  try {
-     const res = await generateCorridorAsync({
-       level: call.request.level,
-       mapWidth: call.request.mapWidth,
-       mapHeight: call.request.mapHeight,
-       tiles: call.request.tiles,
-       anchorX: call.request.anchor_x,
-       anchorY: call.request.anchor_y
-     }, call.request.trace);
-     callback(null, res);
-  } catch(e) { callback(e); }
-}
-
+// ── RPC: ComputeMapModifiers ───────────────────────────────────────────
 async function computeMapModifiers(call, callback) {
   const trace = {
     traceId: call.request.trace?.traceId,
@@ -404,8 +256,6 @@ async function computeMapModifiers(call, callback) {
     timeStart: Date.now(),
     serviceName: 'dnd-service',
     data: JSON.stringify({
-      mapWidth: call.request.mapWidth,
-      mapHeight: call.request.mapHeight,
       px: call.request.playerX,
       py: call.request.playerY
     }),
@@ -413,123 +263,54 @@ async function computeMapModifiers(call, callback) {
   };
 
   try {
-    let tilesJsonStr = call.request.tilesJson || "{}";
     let px = call.request.playerX ?? 0;
     let py = call.request.playerY ?? 0;
     let isInit = false;
-    let newRoomsJson = "[]";
+
+    // 1. Get current world state from world-service
+    const worldState = await getWorldStateAsync({}, trace);
+    let tilesJsonStr = worldState.tilesJson || '{}';
+    let roomsJsonStr = worldState.roomsJson || '[]';
 
     let tilesDict;
-    try {
-      tilesDict = JSON.parse(tilesJsonStr);
-    } catch {
-      tilesDict = {};
-    }
+    try { tilesDict = JSON.parse(tilesJsonStr); } catch { tilesDict = {}; }
 
-    // 0. Detect missing map state and initialize it 
+    // 2. If world is empty, initialize with a starter room
     if (Object.keys(tilesDict).length === 0) {
       isInit = true;
-      const roomRes = await generateRoomAsync({
-        level: 1,
-        tilesJson: "{}",
-        anchorX: 0,
-        anchorY: 0
+
+      // Generate a room via room-service (pure generator)
+      const roomRes = await generateRoomAsync({ level: 1 }, trace);
+
+      // Initialize world via world-service (places room centered at 0,0)
+      const initRes = await initWorldAsync({
+        width: roomRes.width,
+        height: roomRes.height,
+        description: roomRes.description,
+        tilesJson: roomRes.tilesJson,
+        doors: roomRes.doors || []
       }, trace);
-      
-      const rw = roomRes.width;
-      const rh = roomRes.height;
-      const rx = -Math.floor(rw / 2);
-      const ry = -Math.floor(rh / 2);
-      const generatedDoors = roomRes.doors || [];
-      
-      for (let y = ry; y < ry + rh; y++) {
-        for (let x = rx; x < rx + rw; x++) {
-          if (x === rx || x === rx + rw - 1 || y === ry || y === ry + rh - 1) {
-            const isDoor = generatedDoors.some(d => d.x === (x - rx) && d.y === (y - ry));
-            if (isDoor) {
-              tilesDict[`${x},${y}`] = '+';
-            } else {
-              tilesDict[`${x},${y}`] = '#';
-            }
-          } else {
-            tilesDict[`${x},${y}`] = '.';
-          }
-        }
-      }
-      
-      px = 0;
-      py = 0;
-      tilesJsonStr = JSON.stringify(tilesDict);
-      newRoomsJson = JSON.stringify([{ x: rx, y: ry, width: rw, height: rh, description: roomRes.description }]);
-      console.log(`[DndService] Initialized Infinite Map with Starter Room around 0,0 (${rx},${ry})`);
+
+      tilesJsonStr = initRes.tilesJson;
+      roomsJsonStr = initRes.roomsJson;
+      px = initRes.playerX;
+      py = initRes.playerY;
+
+      console.log(`[DndService] Initialized world via world-service`);
     }
 
-    let roomsJsonStr = call.request.roomsJson || "[]";
-    if (isInit) {
-      roomsJsonStr = newRoomsJson;
-    }
-
-    // 1. Split the raw tiles into Layer 0 (Base) and Layer 20 (Interactables)
-    let baseMap = {}; 
-    let interactables = {}; 
-
-    for (const [coord, ch] of Object.entries(tilesDict)) {
-      if (ch === '#' || ch === '.' || ch === ' ') {
-        baseMap[coord] = ch;
-      } else {
-        baseMap[coord] = '.';
-        interactables[coord] = ch;
-      }
-    }
-
-    const layer0 = {
-      layerType: 0,
-      tilesJson: JSON.stringify(baseMap)
-    };
-
-    const layer20 = {
-      layerType: 20,
-      tilesJson: JSON.stringify(interactables)
-    };
-
-    // 2. Linear Pipeline: Call Enemy-Service -> Shade-Service
-    const enemyResponse = await processEnemiesAsync({
-      tilesJson: tilesJsonStr,
-      roomsJson: roomsJsonStr,
-      playerX: px,
-      playerY: py,
-      currentEnemiesJson: call.request.currentEnemiesJson || "[]"
-    }, trace);
-
-    const shadeResponse = await computeVisibilityAsync({
-      tilesJson: tilesJsonStr,
-      playerX: px,
-      playerY: py,
-      visualRange: call.request.visualRange || 8
-    }, trace);
-
-    const layer10 = {
-      layerType: 10,
-      tilesJson: shadeResponse.tilesJson // Maps the shade FOV array dynamically
-    };
-
-    const layer30 = {
-      layerType: 30,
-      tilesJson: enemyResponse.enemyLayer.tilesJson // Maps the enemy positions dynamically 
-    };
-
-    // 3. Composite all specific layers via render-service 
-    const renderPayload = {
-      playerX: px,
-      playerY: py,
-      layers: [layer0, layer10, layer20, layer30]
-    };
-
-    const renderResponse = await compositeLayersAsync(renderPayload, trace);
+    // 3. Run render pipeline
+    const rendered = await buildAndRender(
+      tilesJsonStr, roomsJsonStr,
+      px, py,
+      call.request.visualRange,
+      call.request.currentEnemiesJson,
+      trace
+    );
 
     const responsePayload = {
-      mergedTilesJson: renderResponse.mergedTilesJson,
-      updatedEnemiesJson: enemyResponse.updatedEnemiesJson,
+      mergedTilesJson: rendered.mergedTilesJson,
+      updatedEnemiesJson: rendered.updatedEnemiesJson,
       trace
     };
 
@@ -537,7 +318,7 @@ async function computeMapModifiers(call, callback) {
       responsePayload.newCollisionTiles = tilesJsonStr;
       responsePayload.newPlayerX = px;
       responsePayload.newPlayerY = py;
-      responsePayload.newRoomsJson = newRoomsJson;
+      responsePayload.newRoomsJson = roomsJsonStr;
     }
 
     callback(null, responsePayload);
@@ -549,9 +330,7 @@ async function computeMapModifiers(call, callback) {
 
 function main() {
   const server = new grpc.Server();
-  server.addService(DndService.service, { 
-    generateRoom: generateRoomPassthrough, 
-    generateCorridor: generateCorridorPassthrough, 
+  server.addService(DndService.service, {
     exploreDoor,
     computeMapModifiers
   });

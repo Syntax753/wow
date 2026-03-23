@@ -18,37 +18,28 @@ message TraceInfo {
   repeated TraceInfo sub_spans = 8;
 }
 
+message LocalPosition {
+  int32 x = 1;
+  int32 y = 2;
+}
+
 message GenerateRoomRequest {
   int32 level = 1;
   TraceInfo trace = 2;
-  string tiles_json = 5;
-  int32 anchor_x = 6;
-  int32 anchor_y = 7;
-}
-
-message RoomPosition {
-  int32 x = 1;
-  int32 y = 2;
 }
 
 message GenerateRoomResponse {
   int32 width = 1;
   int32 height = 2;
   string description = 3;
-  repeated RoomPosition doors = 4;
+  repeated LocalPosition doors = 4;
   TraceInfo trace = 5;
-  bool fit_success = 6;
-  int32 origin_x = 7;
-  int32 origin_y = 8;
-  string new_tiles_json = 9;
+  string tiles_json = 6;
 }
 
 message GenerateCorridorRequest {
   int32 level = 1;
   TraceInfo trace = 2;
-  string tiles_json = 5;
-  int32 anchor_x = 6;
-  int32 anchor_y = 7;
 }
 
 message GenerateCorridorResponse {
@@ -56,8 +47,5 @@ message GenerateCorridorResponse {
   string direction = 2;
   string description = 3;
   TraceInfo trace = 4;
-  bool fit_success = 5;
-  int32 origin_x = 6;
-  int32 origin_y = 7;
-  string new_tiles_json = 8;
+  string tiles_json = 5;
 }

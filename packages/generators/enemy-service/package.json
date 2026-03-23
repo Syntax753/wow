@@ -1,0 +1,13 @@
+{
+  "name": "@wow/enemy-service",
+  "version": "1.0.0",
+  "description": "Enemy generator — rolls dice to spawn enemies for rooms based on D&D rules",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "@wow/proto": "*",
+    "@grpc/grpc-js": "^1.10.x"
+  }
+}

@@ -23,11 +23,32 @@ message Enemy {
   int32 max_hp = 7;
 }
 
+message RoomInfo {
+  int32 x = 1;
+  int32 y = 2;
+  int32 width = 3;
+  int32 height = 4;
+  string description = 5;
+}
+
 message MapLayer {
   int32 layer_type = 1;
   string tiles_json = 2;
 }
 
+// Generator RPC — rolls dice to determine if enemies spawn in a room
+message GenerateEnemiesRequest {
+  RoomInfo room = 1;
+  int32 level = 2;
+  TraceInfo trace = 3;
+}
+
+message GenerateEnemiesResponse {
+  repeated Enemy enemies = 1;
+  TraceInfo trace = 2;
+}
+
+// Aggregator RPC — AI movement, attacks, layer building (called by dnd-service)
 message ProcessEnemiesRequest {
   string tiles_json = 3;
   string rooms_json = 4;
@@ -44,5 +65,6 @@ message ProcessEnemiesResponse {
 }
 
 service EnemyService {
+  rpc GenerateEnemies (GenerateEnemiesRequest) returns (GenerateEnemiesResponse) {}
   rpc ProcessEnemies (ProcessEnemiesRequest) returns (ProcessEnemiesResponse) {}
 }

@@ -1,0 +1,13 @@
+{
+  "name": "@wow/world-service",
+  "version": "1.0.0",
+  "description": "World state aggregator — authoritative tile storage, collision detection, structure placement",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node index.js"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.10.x",
+    "@wow/proto": "*"
+  }
+}

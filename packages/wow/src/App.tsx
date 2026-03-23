@@ -60,8 +60,8 @@ function App() {
   useEffect(() => {
     if (serviceStatus !== 'online') return
     const ws = serializeWorldState(gameState)
-    
-    syncTurn(ws, 8)
+
+    syncTurn(ws.playerX, ws.playerY, ws.currentEnemiesJson, 8, ws.level)
       .then((res) => {
         // Actions
         setOverlay(res.data.actions || null)
@@ -136,8 +136,8 @@ function App() {
       addMessage('You push the door open and peer into the darkness...', 'action', 'wow')
 
       try {
-        const payload = serializeWorldState(gameState)
-        const res = await apiExploreDoor(doorPos.x, doorPos.y, payload)
+        const ws = serializeWorldState(gameState)
+        const res = await apiExploreDoor(doorPos.x, doorPos.y, ws.playerX, ws.playerY, ws.currentEnemiesJson, 8, ws.level)
         const struct = res.data
         appendServiceLogs(res.logEntries)
 
@@ -155,7 +155,27 @@ function App() {
             newExplored.delete(doorKey)
             return { ...prev, tiles: newTiles, exploredDoors: newExplored }
           }
-          return addRoom(prev, doorPos, struct.width, struct.height, struct.description, struct.doors, struct.originX, struct.originY, struct.newTilesJson)
+
+          // World-service owns tile state — sync from response
+          let newTiles = prev.tiles
+          if (struct.newTilesJson) {
+            try { newTiles = JSON.parse(struct.newTilesJson) } catch {}
+          }
+          let newRooms = prev.rooms
+          if (struct.newRoomsJson) {
+            try { newRooms = JSON.parse(struct.newRoomsJson) } catch {}
+          }
+          let newEnemies = prev.enemies
+          if (struct.updatedEnemiesJson) {
+            try { newEnemies = JSON.parse(struct.updatedEnemiesJson) } catch {}
+          }
+
+          return {
+            ...prev,
+            tiles: newTiles,
+            rooms: newRooms,
+            enemies: newEnemies,
+          }
         })
       } catch {
         addMessage('The door seems stuck... (services may be offline)', 'system', 'wow')
@@ -281,6 +301,7 @@ function App() {
           <span className={`status-dot ${serviceStatus}`}>shd</span>
           <span className={`status-dot ${serviceStatus}`}>rnd</span>
           <span className={`status-dot ${serviceStatus}`}>enm</span>
+          <span className={`status-dot ${serviceStatus}`}>wld</span>
         </div>
       </div>
 

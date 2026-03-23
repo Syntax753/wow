@@ -29,6 +29,7 @@ const roomProto = loadProto('room.proto');
 const shadeProto = loadProto('shade.proto');
 const renderProto = loadProto('render.proto');
 const enemyProto = loadProto('enemy.proto');
+const worldProto = loadProto('world.proto');
 
 module.exports = {
   grpc,
@@ -40,6 +41,7 @@ module.exports = {
   roomProto,
   shadeProto,
   renderProto,
+  worldProto,
   DiceService: diceProto.dice.DiceService,
   DndService: dndProto.dnd.DndService,
   HeroService: heroProto.hero.HeroService,
@@ -49,4 +51,5 @@ module.exports = {
   ShadeService: shadeProto.shade.ShadeService,
   RenderService: renderProto.render.RenderService,
   EnemyService: enemyProto.enemy.EnemyService,
+  WorldService: worldProto.world.WorldService,
 };

@@ -1,15 +1,13 @@
 {
   "name": "@wow/room-service",
   "version": "1.0.0",
-  "description": "Room microservice handling D&D structure rules",
+  "description": "Room generator — produces room/corridor structures in local coordinates via dice rolls",
   "main": "index.js",
   "scripts": {
     "dev": "node index.js"
   },
   "dependencies": {
-    "@google/genai": "^1.46.0",
     "@grpc/grpc-js": "^1.10.x",
-    "@wow/proto": "*",
-    "dotenv": "^17.3.1"
+    "@wow/proto": "*"
   }
 }

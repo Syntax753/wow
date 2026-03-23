@@ -292,27 +292,12 @@ export function getTileClass(ch: string): string {
   }
 }
 
-/** Serialize the game state into a flat format for gRPC services (e.g. ActionService) */
+/** Serialize the game state — world-service owns tiles/rooms, so we only send player info */
 export function serializeWorldState(state: GameState) {
   return {
     level: state.level,
-    tilesJson: JSON.stringify(state.tiles),
     playerX: state.player.x,
     playerY: state.player.y,
-    rooms: state.rooms.map((r) => ({
-      x: r.x,
-      y: r.y,
-      width: r.width,
-      height: r.height,
-      description: r.description,
-    })),
-    roomsJson: JSON.stringify(state.rooms.map((r) => ({
-      x: r.x,
-      y: r.y,
-      width: r.width,
-      height: r.height,
-      description: r.description,
-    }))),
     currentEnemiesJson: JSON.stringify(state.enemies),
   };
 }
