@@ -14,7 +14,16 @@
       "Bash(cmd.exe /c \"where gcloud\")",
       "Bash(export PATH=\"$PATH:/c/Users/synt_/AppData/Local/Google/Cloud SDK/google-cloud-sdk/bin\")",
       "Bash(bash /c/Users/synt_/dev/wow/scripts/gcp-setup.sh)",
-      "Bash(powershell -ExecutionPolicy Bypass -File \"C:/Users/synt_/dev/wow/scripts/gcp-setup.ps1\")"
+      "Bash(powershell -ExecutionPolicy Bypass -File \"C:/Users/synt_/dev/wow/scripts/gcp-setup.ps1\")",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh run:*)",
+      "Bash(gcloud iam:*)",
+      "Bash(powershell -Command '$env:Path += \\\\\";$env:LOCALAPPDATA\\\\\\\\Google\\\\\\\\Cloud SDK\\\\\\\\google-cloud-sdk\\\\\\\\bin\\\\\"; gcloud iam workload-identity-pools list --location=global --project=world-of-worlds-491214')",
+      "Bash(powershell -ExecutionPolicy Bypass -Command \"$env:Path += \\\\\";$env:LOCALAPPDATA\\\\Google\\\\Cloud SDK\\\\google-cloud-sdk\\\\bin\\\\\"; gcloud iam workload-identity-pools list --location=global --project=world-of-worlds-491214\")",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"C:/Users/synt_/dev/wow/scripts/check-wif.ps1\")",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"C:/Users/synt_/dev/wow/scripts/fix-wif.ps1\")"
     ]
   }
 }
