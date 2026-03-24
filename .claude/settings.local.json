@@ -23,7 +23,8 @@
       "Bash(powershell -Command '$env:Path += \\\\\";$env:LOCALAPPDATA\\\\\\\\Google\\\\\\\\Cloud SDK\\\\\\\\google-cloud-sdk\\\\\\\\bin\\\\\"; gcloud iam workload-identity-pools list --location=global --project=world-of-worlds-491214')",
       "Bash(powershell -ExecutionPolicy Bypass -Command \"$env:Path += \\\\\";$env:LOCALAPPDATA\\\\Google\\\\Cloud SDK\\\\google-cloud-sdk\\\\bin\\\\\"; gcloud iam workload-identity-pools list --location=global --project=world-of-worlds-491214\")",
       "Bash(powershell -ExecutionPolicy Bypass -File \"C:/Users/synt_/dev/wow/scripts/check-wif.ps1\")",
-      "Bash(powershell -ExecutionPolicy Bypass -File \"C:/Users/synt_/dev/wow/scripts/fix-wif.ps1\")"
+      "Bash(powershell -ExecutionPolicy Bypass -File \"C:/Users/synt_/dev/wow/scripts/fix-wif.ps1\")",
+      "Bash(npm --version)"
     ]
   }
 }
