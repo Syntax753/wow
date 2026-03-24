@@ -1,5 +1,5 @@
 # Stage 1: Install deps and build frontend
-FROM node:20-slim AS builder
+FROM node:22-slim AS builder
 
 WORKDIR /app
 
@@ -29,7 +29,7 @@ COPY . .
 RUN npm run build -w wow
 
 # Stage 2: Production image
-FROM node:20-slim
+FROM node:22-slim
 
 WORKDIR /app
 
