@@ -11,6 +11,8 @@ import {
   getHero,
   syncTurn,
   sendInput,
+  getKeymap,
+  getCampaign,
   type HeroState,
   type Inspector,
   type LogEntry as ApiLogEntry,
@@ -19,20 +21,21 @@ import {
 import './index.css'
 
 type ServiceStatus = 'connecting' | 'online' | 'offline'
+type Screen = 'splash' | 'settings' | 'game'
 
-// Keys that should be routed to the server-side input-service
-const INPUT_KEYS = new Set([
-  'w', 'W', 'a', 'A', 's', 'S', 'd', 'D',
-  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-  'o', 'O', 'e', 'E', '.',
-])
+
 
 function App() {
+  const [screen, setScreen] = useState<Screen>('splash')
   const [gameState, setGameState] = useState<GameState>(createInitialState)
   const [serviceStatus, setServiceStatus] = useState<ServiceStatus>('connecting')
   const [processing, setProcessing] = useState(false)
   const [hero, setHero] = useState<HeroState | null>(null)
   const [overlay, setOverlay] = useState<Inspector | null>(null)
+
+  const [defaultKeymap, setDefaultKeymap] = useState<Record<string, any>>({})
+  const [keymap, setKeymap] = useState<Record<string, any>>({})
+  const [campaigns, setCampaigns] = useState<any[]>([])
 
   // Multi-layered visual state orchestrator
   const [mapGrid, setMapGrid] = useState<Tile[][]>([])
@@ -62,15 +65,38 @@ function App() {
     return () => { cancelled = true; clearInterval(interval) }
   }, [])
 
+  // Load configuration
+  useEffect(() => {
+    if (serviceStatus !== 'online') return
+    Promise.all([getKeymap(), getCampaign()]).then(([keyRes, campRes]) => {
+      const defaults = JSON.parse((keyRes.data as any).keymapJson || '{}')
+      const campData = JSON.parse((campRes.data as any).campaignJson || '{}')
+      setDefaultKeymap(defaults)
+      setCampaigns([campData])
+
+      const cookieMatch = document.cookie.match(/(?:^|; )wow_settings=([^;]*)/)
+      let overrides = {}
+      if (cookieMatch) {
+         try { overrides = JSON.parse(decodeURIComponent(cookieMatch[1])) } catch {}
+      }
+
+      const merged = { ...defaults }
+      for (const [id, overrideObj] of Object.entries(overrides)) {
+        if (merged[id]) merged[id] = { ...merged[id], ...(overrideObj as any) }
+      }
+      setKeymap(merged)
+    }).catch(console.error)
+  }, [serviceStatus])
+
   // Initial sync — render the world on first load
   useEffect(() => {
-    if (serviceStatus !== 'online' || initialSyncDone.current) return
+    if (screen !== 'game' || serviceStatus !== 'online' || initialSyncDone.current) return
     initialSyncDone.current = true
 
     const ws = serializeWorldState(gameState)
     syncTurn(ws.playerX, ws.playerY, ws.currentEnemiesJson, 8, ws.level)
       .then((res) => {
-        setOverlay(res.data.actions || null)
+        applyOverlay(res.data.actions || null)
 
         const mapData = res.data.map
         if (!mapData.merged_tiles_json) return
@@ -124,6 +150,24 @@ function App() {
     }))
   }, [])
 
+  const applyOverlay = useCallback((apiOverlay: Inspector | null) => {
+    if (!apiOverlay) {
+      setOverlay(null)
+      return
+    }
+    const mapped = { ...apiOverlay }
+    if (mapped.actions) {
+      mapped.actions = mapped.actions.map(a => {
+        let actionId = null;
+        for (const [id, def] of Object.entries(defaultKeymap)) {
+          if (def.key === a.key) { actionId = id; break; }
+        }
+        return { ...a, key: actionId && keymap[actionId] ? keymap[actionId].key : a.key }
+      })
+    }
+    setOverlay(mapped)
+  }, [defaultKeymap, keymap])
+
   // Unified input handler — sends keypress to server
   const handleInput = useCallback(async (key: string) => {
     if (processing || serviceStatus !== 'online') return
@@ -173,31 +217,42 @@ function App() {
         return { ...prev, ...update, messages }
       })
 
-      // Update action overlay
-      setOverlay(data.actions || null)
+      applyOverlay(data.actions || null)
     } catch (err) {
       console.error('Input error:', err)
       addMessage('Connection lost... (services may be offline)', 'system', 'wow')
     }
     setProcessing(false)
-  }, [processing, serviceStatus, gameState, appendServiceLogs, addMessage])
+  }, [processing, serviceStatus, gameState, appendServiceLogs, addMessage, applyOverlay])
 
   // Keyboard handler — routes all game keys to server
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Map 'e'/'E' to 'o' (open door) for backwards compatibility
-      let key = e.key
-      if (key === 'e' || key === 'E') key = 'o'
+      if (screen !== 'game' || processing || serviceStatus !== 'online') return
 
-      if (INPUT_KEYS.has(key) || INPUT_KEYS.has(e.key)) {
+      let key = e.key
+      let actionId = null
+
+      for (const [id, def] of Object.entries(keymap)) {
+        if (def.key === key) {
+          actionId = id
+          break
+        }
+      }
+
+      if (actionId) {
         e.preventDefault()
-        handleInput(key)
+        // Send the default key backwards to backend
+        const defaultKey = defaultKeymap[actionId]?.key || key
+        handleInput(defaultKey)
       }
     }
 
-    window.addEventListener('keydown', handleKeyDown)
+    if (screen === 'game') {
+      window.addEventListener('keydown', handleKeyDown)
+    }
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleInput])
+  }, [handleInput, screen, keymap, defaultKeymap, processing, serviceStatus])
 
   // Render colored ASCII map
   const renderColoredMap = () => {
@@ -236,6 +291,81 @@ function App() {
     LCK: hero?.luck ?? 10,
   }
   const ac = hero?.armorClass ?? 10
+
+  if (screen === 'splash') {
+    return (
+      <div className="game-container splash-screen" style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+        <pre className="ascii-title" style={{ color: 'var(--terminal-alert)', textShadow: '0 0 10px var(--terminal-alert)', userSelect: 'none' }}>
+{`
+ __    __           _     _             __   __      __    __      _      _
+/ / /\\ \\ \\___  _ __| | __| |   ___  __  \\ \\ / / /\\ \\ \\___| |    / \\    (_)
+\\ \\/  \\/ / _ \\| '__| |/ _\` |  / _ \\/ _|  \\ V / /  \\/ / _ \\ |   / _ \\   | |
+ \\  /\\  / (_) | |  | | (_| | |  __/ (_| |  | |  /\\  / (_) | |  / ___ \\  | |
+  \\/  \\/ \\___/|_|  |_|\\__,_|  \\___|\\__,_|  \\_/\\/  \\/ \\___/|_| /_/   \\_\\ |_|
+`}
+        </pre>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '40px', width: '300px' }}>
+          <button 
+            className="splash-btn"
+            style={{ padding: '15px', fontSize: '1.2em', cursor: 'pointer', background: 'transparent', color: 'var(--terminal-text)', border: '1px solid var(--terminal-dim)' }}
+            onClick={() => setScreen('game')}
+            disabled={serviceStatus !== 'online'}
+          >
+            Play Campaign: {campaigns[0]?.id || '...'}
+          </button>
+          <button 
+            className="splash-btn"
+            style={{ padding: '15px', fontSize: '1.2em', cursor: 'pointer', background: 'transparent', color: 'var(--terminal-text)', border: '1px solid var(--terminal-dim)' }}
+            onClick={() => setScreen('settings')}
+            disabled={serviceStatus !== 'online'}
+          >
+            Settings
+          </button>
+        </div>
+        <div style={{ marginTop: '30px' }}>
+          Service Status: <span className={`status-dot ${serviceStatus}`} />
+        </div>
+      </div>
+    )
+  }
+
+  if (screen === 'settings') {
+    const saveSettings = () => {
+      const overrides: Record<string, any> = {}
+      for (const [k, v] of Object.entries(keymap)) {
+         overrides[k] = { key: v.key }
+      }
+      document.cookie = `wow_settings=${encodeURIComponent(JSON.stringify(overrides))}; path=/; max-age=31536000`
+      setScreen('splash')
+    }
+
+    return (
+      <div className="game-container settings-screen" style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '50px' }}>
+         <h1 style={{ color: 'var(--terminal-alert)', marginBottom: '30px' }}>Settings</h1>
+         <div className="settings-form" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', width: '600px', overflowY: 'auto' }}>
+           {Object.entries(keymap).map(([mapId, mapDef]) => (
+             <div key={mapId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.5)', padding: '10px' }}>
+                <span style={{ color: 'var(--terminal-dim)' }}>{mapDef.label || mapId}</span>
+                <input 
+                  style={{ width: '40px', background: 'transparent', border: '1px solid var(--terminal-highlight)', color: '#fff', textAlign: 'center', padding: '5px' }}
+                  value={mapDef.key} 
+                  maxLength={1}
+                  onChange={(e) => setKeymap(prev => ({ ...prev, [mapId]: { ...prev[mapId], key: e.target.value } }))}
+                />
+             </div>
+           ))}
+         </div>
+         <div style={{ marginTop: '40px', display: 'flex', gap: '20px' }}>
+           <button 
+              style={{ padding: '10px 20px', cursor: 'pointer', background: 'transparent', border: '1px solid var(--terminal-text)', color: 'var(--terminal-text)' }}
+              onClick={saveSettings}
+            >
+              Save and Return
+            </button>
+         </div>
+      </div>
+    )
+  }
 
   return (
     <div className="game-container">

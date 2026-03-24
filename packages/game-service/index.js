@@ -1,5 +1,7 @@
 const grpc = require('@grpc/grpc-js');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { GameService, WorldService, RoomService, DiceService } = require('@wow/proto');
 
 const PORT = process.env.GAME_SERVICE_PORT || 50062;
@@ -49,28 +51,48 @@ const placeStructureAsync = makeAsyncCall(worldClient, 'PlaceStructure', 'world-
 const generateRoomAsync = makeAsyncCall(roomClient, 'GenerateRoom', 'room-service');
 const generateCorridorAsync = makeAsyncCall(roomClient, 'GenerateCorridor', 'room-service');
 
-const CAMPAIGN_CONFIG = {
-  id: 'default',
-  levels: 10,
-  maxDimensionX: 100,
-  maxDimensionY: 100
-};
+const KEYMAP_PATH = path.join(__dirname, '../../data/keymap.json');
+const CAMPAIGNS_DIR = path.join(__dirname, '../../data/campaigns');
 
-const SETTINGS = {
-  audio: true,
-  keyMappings: {
-    moveNorth: '8',
-    moveSouth: '2',
-    moveEast: '6',
-    moveWest: '4',
-    moveNorthWest: '7',
-    moveNorthEast: '9',
-    moveSouthWest: '1',
-    moveSouthEast: '3',
-    wait: '5',
-    interact: 'e'
+function getKeymap(call, callback) {
+  const trace = {
+    traceId: call.request.trace?.traceId,
+    spanId: call.request.trace?.spanId,
+    timeStart: Date.now(),
+    serviceName: 'game-service',
+    data: '',
+    subSpans: []
+  };
+
+  try {
+    const data = fs.readFileSync(KEYMAP_PATH, 'utf8');
+    callback(null, { keymapJson: data, trace });
+  } catch (err) {
+    console.error('[GameService] Error reading keymap:', err.message);
+    callback(err);
   }
-};
+}
+
+function getCampaign(call, callback) {
+  const trace = {
+    traceId: call.request.trace?.traceId,
+    spanId: call.request.trace?.spanId,
+    timeStart: Date.now(),
+    serviceName: 'game-service',
+    data: call.request.campaignId || 'default',
+    subSpans: []
+  };
+
+  try {
+    const campId = call.request.campaignId || 'default';
+    const filePath = path.join(CAMPAIGNS_DIR, `${campId}.json`);
+    const data = fs.readFileSync(filePath, 'utf8');
+    callback(null, { campaignJson: data, trace });
+  } catch (err) {
+    console.error('[GameService] Error reading campaign:', err.message);
+    callback(err);
+  }
+}
 
 async function startGame(call, callback) {
   const trace = {
@@ -109,8 +131,12 @@ async function startGame(call, callback) {
       if (ch === '+') unexplored.push(coord);
     }
 
-    const halfX = CAMPAIGN_CONFIG.maxDimensionX / 2;
-    const halfY = CAMPAIGN_CONFIG.maxDimensionY / 2;
+    // Parse campaign config dynamically
+    const campPath = path.join(CAMPAIGNS_DIR, `genesis.json`);
+    const campaignData = JSON.parse(fs.readFileSync(campPath, 'utf8'));
+
+    const halfX = campaignData.maxDimensionX / 2;
+    const halfY = campaignData.maxDimensionY / 2;
     const margin = 5; // don't place doors too close to the boundary
     let attempts = 0;
     const maxAttempts = 300; // safety limit
@@ -189,7 +215,9 @@ async function startGame(call, callback) {
 function main() {
   const server = new grpc.Server();
   server.addService(GameService.service, {
-    startGame
+    startGame,
+    getKeymap,
+    getCampaign
   });
   server.bindAsync(
     `0.0.0.0:${PORT}`,

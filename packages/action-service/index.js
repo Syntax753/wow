@@ -1,4 +1,33 @@
-const { grpc, ActionService } = require('@wow/proto');
+const crypto = require('crypto');
+const { grpc, ActionService, GameService } = require('@wow/proto');
+
+const GAME_SERVICE_URL = process.env.GAME_SERVICE_URL || 'localhost:50062';
+const gameClient = new GameService(GAME_SERVICE_URL, grpc.credentials.createInsecure());
+
+function makeAsyncCall(client, method, serviceName) {
+  return function(req, parentTrace) {
+    return new Promise((resolve, reject) => {
+      const callerIdentity = {
+        traceId: parentTrace ? parentTrace.traceId : crypto.randomUUID(),
+        spanId: crypto.randomUUID(),
+      };
+      client[method]({ ...req, trace: callerIdentity }, (err, response) => {
+        if (err) {
+          if (parentTrace) parentTrace.subSpans.push({ ...callerIdentity, serviceName, timeEnd: Date.now(), dataRet: JSON.stringify({ error: err.message }) });
+          reject(err);
+        } else {
+          const childTrace = response.trace || { ...callerIdentity, serviceName };
+          childTrace.timeEnd = Date.now();
+          childTrace.dataRet = JSON.stringify({ ...response, trace: undefined });
+          if (parentTrace) parentTrace.subSpans.push(childTrace);
+          resolve(response);
+        }
+      });
+    });
+  };
+}
+
+const getKeymapAsync = makeAsyncCall(gameClient, 'GetKeymap', 'game-service');
 
 const PORT = process.env.ACTION_SERVICE_PORT || '50055';
 
@@ -16,7 +45,7 @@ function getTileAt(tilesDict, x, y) {
   return tilesDict[`${x},${y}`] || TILE.UNKNOWN;
 }
 
-function getAvailableActions(call, callback) {
+async function getAvailableActions(call, callback) {
   const trace = {
     traceId: call.request.trace?.traceId,
     spanId: call.request.trace?.spanId,
@@ -26,76 +55,65 @@ function getAvailableActions(call, callback) {
     subSpans: []
   };
 
-  const { tilesJson, playerX, playerY } = call.request;
+  try {
+    const { tilesJson, playerX, playerY } = call.request;
   
   let tilesDict;
   try { tilesDict = JSON.parse(tilesJson || "{}"); } catch { tilesDict = {}; }
   
+  const keymapRes = await getKeymapAsync({}, trace);
+  const keymap = JSON.parse(keymapRes.keymapJson || '{}');
+
   const actions = [];
 
-  // Always available: movement (but we don't list each direction)
-  // Check adjacent tiles for context-sensitive actions
-  const adjacent = [
-    { dx: 0, dy: -1, dir: 'north' },
-    { dx: 0, dy: 1, dir: 'south' },
-    { dx: -1, dy: 0, dir: 'west' },
-    { dx: 1, dy: 0, dir: 'east' },
-  ];
+  for (const [id, def] of Object.entries(keymap)) {
+    if (!def.label) continue; // Display only actions with a UI label
+    
+    let enabled = true;
+    
+    // Evaluate proximity conditions
+    if (def.actionOnProximity) {
+      if (def.actionOnProximity === 'door') {
+        const adjacent = [{ dx: 0, dy: -1 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }, { dx: 1, dy: 0 }];
+        let nearDoor = false;
+        for (const { dx, dy } of adjacent) {
+          if (getTileAt(tilesDict, playerX + dx, playerY + dy) === '+') {
+            nearDoor = true;
+            break;
+          }
+        }
+        enabled = nearDoor;
+      } else if (def.actionOnProximity === 'floor') {
+        const currentTile = getTileAt(tilesDict, playerX, playerY);
+        enabled = (currentTile === '.' || currentTile === '@');
+      } else {
+        // Unknown proximity defaults to disabled or custom handling
+        enabled = false;
+      }
+    }
 
-  let hasDoor = false;
-  let hasWall = false;
-
-  for (const { dx, dy, dir } of adjacent) {
-    const tile = getTileAt(tilesDict, playerX + dx, playerY + dy);
-    if (tile === TILE.DOOR || tile === '+') {
-      hasDoor = true;
+    if (enabled) {
       actions.push({
-        key: 'o',
-        label: 'Open Door',
-        description: `Open the door to the ${dir}`,
-        enabled: true,
+        key: def.key,
+        label: def.label,
+        description: def.description,
+        enabled: true
       });
     }
-    if (tile === TILE.WALL) {
-      hasWall = true;
-    }
   }
 
-  // Search action is always available in rooms
-  const currentTile = getTileAt(tilesDict, playerX, playerY);
-  if (currentTile === TILE.PLAYER || currentTile === TILE.FLOOR || currentTile === '@' || currentTile === '.') {
-    actions.push({
-      key: 's',
-      label: 'Search',
-      description: 'Search the area for hidden objects',
-      enabled: true,
-    });
+    const overlay = {
+      title: 'Available Actions',
+      description: 'What would you like to do?',
+      image: '',
+      actions: actions
+    };
+
+    callback(null, { overlay, trace });
+  } catch (err) {
+    console.error('[ActionService] Error:', err.message);
+    callback(err);
   }
-
-  // Inventory
-  actions.push({
-    key: 'i',
-    label: 'Inventory',
-    description: 'Open your inventory',
-    enabled: true,
-  });
-
-  // Wait/Rest
-  actions.push({
-    key: '.',
-    label: 'Wait',
-    description: 'Wait one turn',
-    enabled: true,
-  });
-
-  const overlay = {
-    title: 'Available Actions',
-    description: 'What would you like to do?',
-    image: '',
-    actions: actions
-  };
-
-  callback(null, { overlay, trace });
 }
 
 function main() {

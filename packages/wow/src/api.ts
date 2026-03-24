@@ -161,6 +161,15 @@ export interface InputResponse {
   actions: Inspector;
 }
 
+// === Configuration ===
+export interface GetKeymapResponse {
+  keymapJson: string;
+}
+
+export interface GetCampaignResponse {
+  campaignJson: string;
+}
+
 // === API calls ===
 function logTrace(trace: any, parentName = 'wow') {
   if (!trace) return;
@@ -279,6 +288,10 @@ export const syncTurn = (playerX: number, playerY: number, currentEnemiesJson = 
 // Input — unified keypress handler (movement, actions, door exploration)
 export const sendInput = (key: string, currentEnemiesJson = '[]', visualRange = 8, level = 1) =>
   post<InputResponse>('/input', { key, currentEnemiesJson, visualRange, level });
+
+// Config
+export const getKeymap = () => get<GetKeymapResponse>('/config/keymap');
+export const getCampaign = () => get<GetCampaignResponse>('/config/campaigns');
 
 // Health
 export async function healthCheck(): Promise<{ status: string }> {

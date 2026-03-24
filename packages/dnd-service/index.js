@@ -98,8 +98,8 @@ const revealTilesAsync = makeAsyncCall(worldClient, 'RevealTiles', 'world-servic
 const getHeroAsync = makeAsyncCall(heroClient, 'GetHero', 'hero-service');
 const updatePositionAsync = makeAsyncCall(heroClient, 'UpdatePosition', 'hero-service');
 const getEffectiveStatsAsync = makeAsyncCall(heroClient, 'GetEffectiveStats', 'hero-service');
-const processInputAsync = makeAsyncCall(inputClient, 'ProcessInput', 'input-service');
 const startGameAsync = makeAsyncCall(gameClient, 'StartGame', 'game-service');
+const getKeymapAsync = makeAsyncCall(gameClient, 'GetKeymap', 'game-service');
 
 // ── Helper: build layers from world tiles and run render pipeline ──────
 async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, currentEnemiesJson, trace) {
@@ -404,13 +404,59 @@ async function processInput(call, callback) {
       console.log(`[DndService] Initialized world via ProcessInput through game-service`);
     }
 
-    // 4. Call input-service to validate the keypress
-    const inputResult = await processInputAsync({
-      key,
-      playerX: px,
-      playerY: py,
-      tilesJson: tilesJsonStr
-    }, trace);
+    // 4. Fetch dynamic keymap
+    const keymapRes = await getKeymapAsync({}, trace);
+    const keymap = JSON.parse(keymapRes.keymapJson || '{}');
+
+    // Find requested action
+    let actionId = null;
+    let actionDef = null;
+    for (const [id, def] of Object.entries(keymap)) {
+      if (def.key === key) {
+        actionId = id;
+        actionDef = def;
+        break;
+      }
+    }
+
+    let inputResult = { action: 'none', message: '', positionChanged: false, newX: px, newY: py };
+
+    const getTile = (x, y) => tilesDict[`${x},${y}`] || ' ';
+
+    if (actionId) {
+      if (actionId.startsWith('move')) {
+        const nx = px + actionDef.dx;
+        const ny = py + actionDef.dy;
+        const target = getTile(nx, ny);
+
+        if (target === '#') {
+          inputResult = { newX: px, newY: py, action: 'blocked', message: 'Ouch!', positionChanged: false };
+        } else if (target === ' ') {
+          inputResult = { newX: px, newY: py, action: 'blocked', message: '', positionChanged: false };
+        } else if (target === '+') {
+          inputResult = { newX: nx, newY: ny, action: 'open_door', message: 'You push the door open and peer into the darkness...', doorX: nx, doorY: ny, positionChanged: true };
+        } else {
+          inputResult = { newX: nx, newY: ny, action: 'move', message: '', positionChanged: true };
+        }
+      } else if (actionId === 'open') {
+        const adjacent = [{ x: px, y: py - 1 }, { x: px, y: py + 1 }, { x: px - 1, y: py }, { x: px + 1, y: py }];
+        let foundDoor = false;
+        for (const pos of adjacent) {
+          if (getTile(pos.x, pos.y) === '+') {
+            inputResult = { newX: pos.x, newY: pos.y, action: 'open_door', message: 'You push the door open and peer into the darkness...', doorX: pos.x, doorY: pos.y, positionChanged: true };
+            foundDoor = true;
+            break;
+          }
+        }
+        if (!foundDoor) {
+          inputResult.message = 'There is no door nearby.';
+        }
+      } else if (actionId === 'wait') {
+        inputResult = { newX: px, newY: py, action: 'wait', message: 'You wait...', positionChanged: false };
+      } else {
+        inputResult = { newX: px, newY: py, action: actionId, message: '', positionChanged: false };
+      }
+    }
 
     let message = inputResult.message || '';
 

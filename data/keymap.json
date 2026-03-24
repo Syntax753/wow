@@ -1,0 +1,32 @@
+{
+  "moveNorth": { "key": "8", "dx": 0, "dy": -1 },
+  "moveSouth": { "key": "2", "dx": 0, "dy": 1 },
+  "moveWest": { "key": "4", "dx": -1, "dy": 0 },
+  "moveEast": { "key": "6", "dx": 1, "dy": 0 },
+  "moveNorthWest": { "key": "7", "dx": -1, "dy": -1 },
+  "moveNorthEast": { "key": "9", "dx": 1, "dy": -1 },
+  "moveSouthWest": { "key": "1", "dx": -1, "dy": 1 },
+  "moveSouthEast": { "key": "3", "dx": 1, "dy": 1 },
+  "wait": {
+    "key": "5",
+    "label": "Wait",
+    "description": "Wait one turn"
+  },
+  "open": {
+    "key": "o",
+    "label": "Open Door",
+    "description": "Open nearby door",
+    "actionOnProximity": "door"
+  },
+  "search": {
+    "key": "s",
+    "label": "Search",
+    "description": "Search the area for hidden objects",
+    "actionOnProximity": "floor"
+  },
+  "inventory": {
+    "key": "i",
+    "label": "Inventory",
+    "description": "Open your inventory"
+  }
+}

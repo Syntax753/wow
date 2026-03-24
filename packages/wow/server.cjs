@@ -7,7 +7,7 @@ const http = require('http');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { grpc, DiceService, DndService, HeroService, InventoryService, ActionService, WorldService } = require('@wow/proto');
+const { grpc, DiceService, DndService, HeroService, InventoryService, ActionService, WorldService, GameService } = require('@wow/proto');
 
 const API_PORT = process.env.PORT || process.env.API_PORT || 3001;
 const DICE_URL = process.env.DICE_SERVICE_URL || 'localhost:50051';
@@ -16,6 +16,7 @@ const HERO_URL = process.env.HERO_SERVICE_URL || 'localhost:50053';
 const INVENTORY_URL = process.env.INVENTORY_SERVICE_URL || 'localhost:50054';
 const ACTION_URL = process.env.ACTION_SERVICE_URL || 'localhost:50055';
 const WORLD_URL = process.env.WORLD_SERVICE_URL || 'localhost:50060';
+const GAME_URL = process.env.GAME_SERVICE_URL || 'localhost:50062';
 
 const diceClient = new DiceService(DICE_URL, grpc.credentials.createInsecure());
 const dndClient = new DndService(DND_URL, grpc.credentials.createInsecure());
@@ -23,6 +24,7 @@ const heroClient = new HeroService(HERO_URL, grpc.credentials.createInsecure());
 const inventoryClient = new InventoryService(INVENTORY_URL, grpc.credentials.createInsecure());
 const actionClient = new ActionService(ACTION_URL, grpc.credentials.createInsecure());
 const worldClient = new WorldService(WORLD_URL, grpc.credentials.createInsecure());
+const gameClient = new GameService(GAME_URL, grpc.credentials.createInsecure());
 
 function cloneReqRes(obj) {
   const clone = { ...obj };
@@ -348,9 +350,21 @@ const server = http.createServer(async (req, res) => {
     // === Health ===
     } else if (req.url === '/api/health') {
       rootSpan.timeEnd = Date.now();
-      const resData = { status: 'ok', services: ['dice', 'dnd', 'hero', 'inventory', 'action', 'world'] };
+      const resData = { status: 'ok', services: ['dice', 'dnd', 'hero', 'inventory', 'action', 'world', 'game'] };
       rootSpan.dataRet = JSON.stringify(resData);
       json(res, 200, resData);
+
+    } else if (req.url === '/api/config/keymap' && req.method === 'GET') {
+      const resData = await grpcCall(gameClient, 'game-service', 'getKeymap', {}, rootSpan);
+      rootSpan.timeEnd = Date.now();
+      rootSpan.dataRet = JSON.stringify(resData);
+      json(res, 200, envelope(resData, [], rootSpan));
+
+    } else if (req.url === '/api/config/campaigns' && req.method === 'GET') {
+      const resData = await grpcCall(gameClient, 'game-service', 'getCampaign', { campaignId: 'default' }, rootSpan);
+      rootSpan.timeEnd = Date.now();
+      rootSpan.dataRet = JSON.stringify(resData);
+      json(res, 200, envelope(resData, [], rootSpan));
 
     } else {
       rootSpan.timeEnd = Date.now();

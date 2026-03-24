@@ -4,6 +4,8 @@ package game;
 
 service GameService {
   rpc StartGame (StartGameRequest) returns (StartGameResponse) {}
+  rpc GetKeymap (GetKeymapRequest) returns (GetKeymapResponse) {}
+  rpc GetCampaign (GetCampaignRequest) returns (GetCampaignResponse) {}
 }
 
 message TraceInfo {
@@ -24,5 +26,24 @@ message StartGameRequest {
 
 message StartGameResponse {
   bool success = 1;
+  TraceInfo trace = 2;
+}
+
+message GetKeymapRequest {
+  TraceInfo trace = 1;
+}
+
+message GetKeymapResponse {
+  string keymap_json = 1;
+  TraceInfo trace = 2;
+}
+
+message GetCampaignRequest {
+  string campaign_id = 1;
+  TraceInfo trace = 2;
+}
+
+message GetCampaignResponse {
+  string campaign_json = 1;
   TraceInfo trace = 2;
 }
