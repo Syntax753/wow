@@ -68,6 +68,9 @@ message Item {
   string item_type = 4;   // weapon, armor, potion, scroll, key, misc
   int32 quantity = 5;
   map<string, int32> modifiers = 6; // e.g. {"STR": 2, "VIT": -1}
+  double weight = 7;               // weight in pounds
+  bool can_carry = 8;              // whether the item can be picked up
+  repeated string can_fit = 9;     // body parts: "head", "chest", "legs", "feet", "right hand", "left hand", "neck", "finger"
 }
 
 message InventoryState {

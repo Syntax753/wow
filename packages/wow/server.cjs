@@ -366,6 +366,47 @@ const server = http.createServer(async (req, res) => {
       rootSpan.dataRet = JSON.stringify(resData);
       json(res, 200, envelope(resData, [], rootSpan));
 
+    } else if (req.url === '/api/game/state' && req.method === 'GET') {
+      const resData = await grpcCall(gameClient, 'game-service', 'getGameState', {}, rootSpan);
+      rootSpan.timeEnd = Date.now();
+      rootSpan.dataRet = JSON.stringify(resData);
+      json(res, 200, envelope(resData, [], rootSpan));
+
+    } else if (req.url === '/api/settings' && req.method === 'GET') {
+      const resData = await grpcCall(gameClient, 'game-service', 'getSettings', {}, rootSpan);
+      rootSpan.timeEnd = Date.now();
+      rootSpan.dataRet = JSON.stringify(resData);
+      json(res, 200, envelope(resData, [], rootSpan));
+
+    } else if (req.url === '/api/game/new' && req.method === 'POST') {
+      // Reset hero to defaults
+      await grpcCall(heroClient, 'hero-service', 'resetHero', {
+        heroId: 'default',
+        name: body.name || 'Adventurer',
+        heroClass: body.heroClass || 'Fighter',
+      }, rootSpan);
+
+      // Start a fresh game (this resets world + regenerates the map)
+      const gameRes = await grpcCall(gameClient, 'game-service', 'startGame', {
+        level: 0,
+        campaignId: body.campaignId || 'default',
+      }, rootSpan);
+
+      rootSpan.timeEnd = Date.now();
+      json(res, 200, envelope(gameRes, [
+        logEntry('A new adventure begins...', 'discovery', 'game'),
+      ], rootSpan));
+
+    } else if (req.url === '/api/settings' && req.method === 'POST') {
+      const resData = await grpcCall(gameClient, 'game-service', 'updateSettings', {
+        settingsJson: JSON.stringify(body),
+      }, rootSpan);
+      rootSpan.timeEnd = Date.now();
+      rootSpan.dataRet = JSON.stringify(resData);
+      json(res, 200, envelope(resData, [
+        logEntry('Settings updated', 'info', 'game'),
+      ], rootSpan));
+
     } else {
       rootSpan.timeEnd = Date.now();
       rootSpan.dataRet = JSON.stringify({ error: 'Not found' });

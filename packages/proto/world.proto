@@ -8,6 +8,7 @@ service WorldService {
   rpc InitWorld (InitWorldRequest) returns (InitWorldResponse) {}
   rpc ResetWorld (ResetWorldRequest) returns (ResetWorldResponse) {}
   rpc RevealTiles (RevealTilesRequest) returns (RevealTilesResponse) {}
+  rpc SetTile (SetTileRequest) returns (SetTileResponse) {}
 }
 
 message TraceInfo {
@@ -93,4 +94,18 @@ message ResetWorldRequest {
 message ResetWorldResponse {
   bool success = 1;
   TraceInfo trace = 2;
+}
+
+message SetTileRequest {
+  int32 x = 1;
+  int32 y = 2;
+  string tile_char = 3;
+  TraceInfo trace = 4;
+}
+
+message SetTileResponse {
+  bool success = 1;
+  string tiles_json = 2;
+  string rooms_json = 3;
+  TraceInfo trace = 4;
 }

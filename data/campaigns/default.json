@@ -1,0 +1,107 @@
+{
+  "id": "default",
+  "name": "Descent into Darkness",
+  "description": "A 10-level dungeon crawl into the depths of an ancient underground stronghold.",
+  "levels": [
+    {
+      "level": 0,
+      "name": "The Entrance",
+      "maxDimensionX": 10000,
+      "maxDimensionY": 10000,
+      "maxRooms": 8,
+      "maxEnemies": 3,
+      "difficulty": 1,
+      "description": "The crumbling entrance to the dungeon. Faint torchlight flickers ahead."
+    },
+    {
+      "level": 1,
+      "name": "Upper Halls",
+      "maxDimensionX": 10000,
+      "maxDimensionY": 10000,
+      "maxRooms": 12,
+      "maxEnemies": 5,
+      "difficulty": 2,
+      "description": "Wide stone corridors echo with distant sounds."
+    },
+    {
+      "level": 2,
+      "name": "The Warrens",
+      "maxDimensionX": 10000,
+      "maxDimensionY": 10000,
+      "maxRooms": 15,
+      "maxEnemies": 8,
+      "difficulty": 3,
+      "description": "A tangled maze of narrow tunnels and cramped chambers."
+    },
+    {
+      "level": 3,
+      "name": "Flooded Crypts",
+      "maxDimensionX": 10000,
+      "maxDimensionY": 10000,
+      "maxRooms": 12,
+      "maxEnemies": 10,
+      "difficulty": 4,
+      "description": "Ankle-deep water covers the floor. The air smells of decay."
+    },
+    {
+      "level": 4,
+      "name": "The Forge",
+      "maxDimensionX": 10000,
+      "maxDimensionY": 10000,
+      "maxRooms": 10,
+      "maxEnemies": 12,
+      "difficulty": 5,
+      "description": "Ancient dwarven forges still glow with faint embers."
+    },
+    {
+      "level": 5,
+      "name": "Fungal Caverns",
+      "maxDimensionX": 10000,
+      "maxDimensionY": 10000,
+      "maxRooms": 14,
+      "maxEnemies": 14,
+      "difficulty": 6,
+      "description": "Bioluminescent fungi cast an eerie blue glow across vast caverns."
+    },
+    {
+      "level": 6,
+      "name": "The Labyrinth",
+      "maxDimensionX": 10000,
+      "maxDimensionY": 10000,
+      "maxRooms": 18,
+      "maxEnemies": 16,
+      "difficulty": 7,
+      "description": "An intentionally confusing maze built to trap intruders."
+    },
+    {
+      "level": 7,
+      "name": "Obsidian Depths",
+      "maxDimensionX": 10000,
+      "maxDimensionY": 10000,
+      "maxRooms": 12,
+      "maxEnemies": 18,
+      "difficulty": 8,
+      "description": "Walls of black volcanic glass reflect distorted images."
+    },
+    {
+      "level": 8,
+      "name": "The Abyssal Halls",
+      "maxDimensionX": 10000,
+      "maxDimensionY": 10000,
+      "maxRooms": 10,
+      "maxEnemies": 20,
+      "difficulty": 9,
+      "description": "The darkness here feels alive. Ancient runes pulse on the walls."
+    },
+    {
+      "level": 9,
+      "name": "The Dragon's Lair",
+      "maxDimensionX": 10000,
+      "maxDimensionY": 10000,
+      "maxRooms": 6,
+      "maxEnemies": 25,
+      "difficulty": 10,
+      "description": "The final depth. Gold glitters in the darkness. Something stirs."
+    }
+  ]
+}

@@ -86,6 +86,9 @@ export interface Item {
   itemType: string;
   quantity: number;
   modifiers: Record<string, number>;
+  weight: number;
+  canCarry: boolean;
+  canFit: string[];  // body parts: 'head', 'chest', 'legs', 'feet', 'right hand', 'left hand', 'neck', 'finger'
 }
 
 export interface InventoryState {
@@ -292,6 +295,26 @@ export const sendInput = (key: string, currentEnemiesJson = '[]', visualRange = 
 // Config
 export const getKeymap = () => get<GetKeymapResponse>('/config/keymap');
 export const getCampaign = () => get<GetCampaignResponse>('/config/campaigns');
+
+// Game State
+export interface GameStateResponse {
+  campaignId: string;
+  currentLevel: number;
+  levelName: string;
+  totalLevels: number;
+  settingsJson: string;
+}
+
+export interface SettingsResponse {
+  settingsJson: string;
+}
+
+export const getGameState = () => get<GameStateResponse>('/game/state');
+export const getSettings = () => get<SettingsResponse>('/settings');
+export const updateSettings = (settings: Record<string, any>) =>
+  post<SettingsResponse>('/settings', settings);
+export const startNewAdventure = (campaignId = 'default', name = 'Adventurer', heroClass = 'Fighter') =>
+  post<{ success: boolean }>('/game/new', { campaignId, name, heroClass });
 
 // Health
 export async function healthCheck(): Promise<{ status: string }> {

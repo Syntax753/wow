@@ -18,6 +18,12 @@
     "description": "Open nearby door",
     "actionOnProximity": "door"
   },
+  "close": {
+    "key": "c",
+    "label": "Close Door",
+    "description": "Close a nearby open doorway",
+    "actionOnProximity": "opening"
+  },
   "search": {
     "key": "s",
     "label": "Search",

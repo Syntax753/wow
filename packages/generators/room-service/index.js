@@ -69,23 +69,56 @@ async function generateRoom(call, callback) {
       }
     }
 
-    // Roll for 1-2 structural doors on random walls
+    // Determine door count: use requested count, or roll randomly
     const doors = [];
-    const numDoors = (await rollDiceAsync(['1d2'], trace)).grandTotal;
-    for (let i = 0; i < numDoors; i++) {
-      const sRoll = await rollDiceAsync(['1d4'], trace);
-      const side = sRoll.grandTotal - 1;
-      let dx = 0, dy = 0;
-      if (side === 0 && width > 2) { dx = Math.floor(Math.random() * (width - 2)) + 1; dy = 0; }
-      else if (side === 1 && width > 2) { dx = Math.floor(Math.random() * (width - 2)) + 1; dy = height - 1; }
-      else if (side === 2 && height > 2) { dx = 0; dy = Math.floor(Math.random() * (height - 2)) + 1; }
-      else if (side === 3 && height > 2) { dx = width - 1; dy = Math.floor(Math.random() * (height - 2)) + 1; }
-      else continue;
+    let numDoors;
+    if (call.request.doorCount > 0) {
+      numDoors = call.request.doorCount;
+    } else {
+      numDoors = (await rollDiceAsync(['1d2'], trace)).grandTotal;
+    }
 
-      const isDup = doors.some(d => d.x === dx && d.y === dy);
-      if (!isDup) {
-        doors.push({ x: dx, y: dy });
-        localTiles[`${dx},${dy}`] = '+';
+    // Place doors spread across different walls, with minimum spacing of 2 tiles
+    // between any two doors so each exit is clearly distinct.
+    // Prefer distributing doors evenly: cycle through walls round-robin.
+    const placedDoors = []; // [{x,y}] for distance checks
+    const MIN_DOOR_DIST = 3; // minimum Manhattan distance between doors
+
+    function tooCloseToExisting(dx, dy) {
+      for (const d of placedDoors) {
+        if (Math.abs(d.x - dx) + Math.abs(d.y - dy) < MIN_DOOR_DIST) return true;
+      }
+      return false;
+    }
+
+    // Build a shuffled wall order so doors spread across sides
+    const wallOrder = [0, 1, 2, 3]; // N, S, W, E
+    for (let k = wallOrder.length - 1; k > 0; k--) {
+      const j = Math.floor(Math.random() * (k + 1));
+      [wallOrder[k], wallOrder[j]] = [wallOrder[j], wallOrder[k]];
+    }
+
+    for (let i = 0; i < numDoors; i++) {
+      let placed = false;
+      // Try walls in round-robin order, starting from a cycled offset
+      for (let w = 0; w < 4 && !placed; w++) {
+        const side = wallOrder[(i + w) % 4];
+        // Try up to 10 random positions on this wall
+        for (let attempt = 0; attempt < 10 && !placed; attempt++) {
+          let dx = 0, dy = 0;
+          if (side === 0 && width > 2) { dx = Math.floor(Math.random() * (width - 2)) + 1; dy = 0; }
+          else if (side === 1 && width > 2) { dx = Math.floor(Math.random() * (width - 2)) + 1; dy = height - 1; }
+          else if (side === 2 && height > 2) { dx = 0; dy = Math.floor(Math.random() * (height - 2)) + 1; }
+          else if (side === 3 && height > 2) { dx = width - 1; dy = Math.floor(Math.random() * (height - 2)) + 1; }
+          else break;
+
+          if (!tooCloseToExisting(dx, dy)) {
+            placedDoors.push({ x: dx, y: dy });
+            doors.push({ x: dx, y: dy });
+            localTiles[`${dx},${dy}`] = '+';
+            placed = true;
+          }
+        }
       }
     }
 
@@ -132,8 +165,9 @@ async function generateCorridor(call, callback) {
     const directions = ['N', 'S', 'E', 'W'];
     const direction = directions[(dirRoll.grandTotal - 1) % 4];
 
-    // Build local tile map — 3-wide corridor with walls on both sides
-    // and a door at the far end for further exploration.
+    // Build local tile map — 3-wide corridor with walls on both sides.
+    // Corridors are open passageways (edges in the graph) connecting rooms.
+    // NO doors along the direction of travel — those belong on rooms.
     // Vertical (N/S): width=3, height=length — floor column at x=1
     // Horizontal (E/W): width=length, height=3 — floor row at y=1
     const localTiles = {};
@@ -144,28 +178,21 @@ async function generateCorridor(call, callback) {
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         if (isVertical) {
-          // Vertical corridor: walls at x=0 and x=2, floor at x=1
           localTiles[`${x},${y}`] = (x === 1) ? '.' : '#';
         } else {
-          // Horizontal corridor: walls at y=0 and y=2, floor at y=1
           localTiles[`${x},${y}`] = (y === 1) ? '.' : '#';
         }
       }
     }
 
-    // Place a door at the far end of the corridor
+    // Open both ends of the corridor (floor, not doors or walls)
+    // so it connects seamlessly to adjacent rooms/corridors
     if (isVertical) {
-      if (direction === 'N') {
-        localTiles[`1,0`] = '+';  // Door at top
-      } else {
-        localTiles[`1,${h - 1}`] = '+';  // Door at bottom
-      }
+      localTiles[`1,0`] = '.';
+      localTiles[`1,${h - 1}`] = '.';
     } else {
-      if (direction === 'W') {
-        localTiles[`0,1`] = '+';  // Door at left
-      } else {
-        localTiles[`${w - 1},1`] = '+';  // Door at right
-      }
+      localTiles[`0,1`] = '.';
+      localTiles[`${w - 1},1`] = '.';
     }
 
     // Roll for description

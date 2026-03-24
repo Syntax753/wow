@@ -83,6 +83,21 @@ async function getAvailableActions(call, callback) {
           }
         }
         enabled = nearDoor;
+      } else if (def.actionOnProximity === 'opening') {
+        // Check for closeable openings: adjacent floor tiles with 2+ wall neighbors (doorways)
+        const adjacent = [{ dx: 0, dy: -1 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }, { dx: 1, dy: 0 }];
+        let nearOpening = false;
+        for (const { dx, dy } of adjacent) {
+          const ax = playerX + dx, ay = playerY + dy;
+          if (getTileAt(tilesDict, ax, ay) !== '.') continue;
+          let wallCount = 0;
+          if (getTileAt(tilesDict, ax, ay - 1) === '#') wallCount++;
+          if (getTileAt(tilesDict, ax, ay + 1) === '#') wallCount++;
+          if (getTileAt(tilesDict, ax - 1, ay) === '#') wallCount++;
+          if (getTileAt(tilesDict, ax + 1, ay) === '#') wallCount++;
+          if (wallCount >= 2) { nearOpening = true; break; }
+        }
+        enabled = nearOpening;
       } else if (def.actionOnProximity === 'floor') {
         const currentTile = getTileAt(tilesDict, playerX, playerY);
         enabled = (currentTile === '.' || currentTile === '@');

@@ -1,0 +1,7 @@
+{
+  "audio": true,
+  "musicVolume": 0.5,
+  "sfxVolume": 0.7,
+  "keymapOverrides": {},
+  "logLevel": "info"
+}

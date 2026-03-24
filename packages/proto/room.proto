@@ -26,6 +26,7 @@ message LocalPosition {
 message GenerateRoomRequest {
   int32 level = 1;
   TraceInfo trace = 2;
+  int32 door_count = 3;  // 0 = roll randomly, >0 = exact number of doors
 }
 
 message GenerateRoomResponse {

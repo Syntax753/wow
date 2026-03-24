@@ -128,6 +128,47 @@ function processInput(call, callback) {
       return;
     }
 
+    // 'c' key — close adjacent opening
+    if (key === 'c' || key === 'C') {
+      const adjacent = [
+        { x: px, y: py - 1 },
+        { x: px, y: py + 1 },
+        { x: px - 1, y: py },
+        { x: px + 1, y: py },
+      ];
+
+      for (const pos of adjacent) {
+        const tile = getTile(pos.x, pos.y);
+        if (tile !== TILE_FLOOR) continue;
+        // Check if tile is on a wall boundary (doorway = 2+ adjacent walls)
+        let wallCount = 0;
+        if (getTile(pos.x, pos.y - 1) === TILE_WALL) wallCount++;
+        if (getTile(pos.x, pos.y + 1) === TILE_WALL) wallCount++;
+        if (getTile(pos.x - 1, pos.y) === TILE_WALL) wallCount++;
+        if (getTile(pos.x + 1, pos.y) === TILE_WALL) wallCount++;
+        if (wallCount >= 2) {
+          callback(null, {
+            newX: px, newY: py,
+            action: 'close_door',
+            message: 'You close the door.',
+            doorX: pos.x, doorY: pos.y,
+            positionChanged: false,
+            trace
+          });
+          return;
+        }
+      }
+
+      callback(null, {
+        newX: px, newY: py,
+        action: 'none',
+        message: 'There is nothing to close nearby.',
+        positionChanged: false,
+        trace
+      });
+      return;
+    }
+
     // '.' or '5' key — wait
     if (key === '.' || key === '5') {
       callback(null, {

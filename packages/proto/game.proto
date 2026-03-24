@@ -6,6 +6,9 @@ service GameService {
   rpc StartGame (StartGameRequest) returns (StartGameResponse) {}
   rpc GetKeymap (GetKeymapRequest) returns (GetKeymapResponse) {}
   rpc GetCampaign (GetCampaignRequest) returns (GetCampaignResponse) {}
+  rpc GetGameState (GetGameStateRequest) returns (GetGameStateResponse) {}
+  rpc GetSettings (GetSettingsRequest) returns (GetSettingsResponse) {}
+  rpc UpdateSettings (UpdateSettingsRequest) returns (UpdateSettingsResponse) {}
 }
 
 message TraceInfo {
@@ -21,12 +24,16 @@ message TraceInfo {
 
 message StartGameRequest {
   int32 level = 1;
-  TraceInfo trace = 2;
+  string campaign_id = 2;
+  TraceInfo trace = 3;
 }
 
 message StartGameResponse {
   bool success = 1;
-  TraceInfo trace = 2;
+  string level_name = 2;
+  string level_description = 3;
+  int32 current_level = 4;
+  TraceInfo trace = 5;
 }
 
 message GetKeymapRequest {
@@ -46,4 +53,37 @@ message GetCampaignRequest {
 message GetCampaignResponse {
   string campaign_json = 1;
   TraceInfo trace = 2;
+}
+
+message GetGameStateRequest {
+  TraceInfo trace = 1;
+}
+
+message GetGameStateResponse {
+  string campaign_id = 1;
+  int32 current_level = 2;
+  string level_name = 3;
+  int32 total_levels = 4;
+  string settings_json = 5;
+  TraceInfo trace = 6;
+}
+
+message GetSettingsRequest {
+  TraceInfo trace = 1;
+}
+
+message GetSettingsResponse {
+  string settings_json = 1;
+  TraceInfo trace = 2;
+}
+
+message UpdateSettingsRequest {
+  string settings_json = 1;
+  TraceInfo trace = 2;
+}
+
+message UpdateSettingsResponse {
+  bool success = 1;
+  string settings_json = 2;
+  TraceInfo trace = 3;
 }

@@ -152,6 +152,7 @@ function placeStructure(call, callback) {
       const actualH = isVertical ? corridorLength : 3;
 
       // Rebuild local tiles for the actual direction
+      // Corridors are open passageways — no doors at ends
       const corrTiles = {};
       for (let y = 0; y < actualH; y++) {
         for (let x = 0; x < actualW; x++) {
@@ -162,13 +163,13 @@ function placeStructure(call, callback) {
           }
         }
       }
-      // Door at far end
+      // Open both ends (floor, not doors)
       if (isVertical) {
-        if (dir === 'N') corrTiles[`1,0`] = '+';
-        else corrTiles[`1,${actualH - 1}`] = '+';
+        corrTiles[`1,0`] = '.';
+        corrTiles[`1,${actualH - 1}`] = '.';
       } else {
-        if (dir === 'W') corrTiles[`0,1`] = '+';
-        else corrTiles[`${actualW - 1},1`] = '+';
+        corrTiles[`0,1`] = '.';
+        corrTiles[`${actualW - 1},1`] = '.';
       }
 
       // Position the corridor so the anchor aligns with the floor center
@@ -381,6 +382,30 @@ function resetWorld(call, callback) {
   callback(null, { success: true, trace });
 }
 
+// ── RPC: SetTile ──────────────────────────────────────────────────────
+// Directly set a single tile (e.g. convert door '+' to floor '.' or vice versa)
+function setTile(call, callback) {
+  const trace = {
+    traceId: call.request.trace?.traceId,
+    spanId: call.request.trace?.spanId,
+    timeStart: Date.now(),
+    serviceName: 'world-service',
+    data: JSON.stringify({ x: call.request.x, y: call.request.y, tile: call.request.tileChar }),
+    subSpans: []
+  };
+
+  const { x, y, tileChar } = call.request;
+  worldTiles[`${x},${y}`] = tileChar;
+  console.log(`[WorldService] SetTile: (${x},${y}) = '${tileChar}'`);
+
+  callback(null, {
+    success: true,
+    tilesJson: JSON.stringify(worldTiles),
+    roomsJson: JSON.stringify(worldRooms),
+    trace
+  });
+}
+
 // ── Server bootstrap ───────────────────────────────────────────────────
 function main() {
   const server = new grpc.Server();
@@ -389,7 +414,8 @@ function main() {
     getWorldState,
     initWorld,
     resetWorld,
-    revealTiles
+    revealTiles,
+    setTile
   });
   server.bindAsync(
     `0.0.0.0:${PORT}`,

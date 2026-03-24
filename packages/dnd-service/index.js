@@ -95,11 +95,13 @@ const initWorldAsync = makeAsyncCall(worldClient, 'InitWorld', 'world-service');
 const placeStructureAsync = makeAsyncCall(worldClient, 'PlaceStructure', 'world-service');
 const resetWorldAsync = makeAsyncCall(worldClient, 'ResetWorld', 'world-service');
 const revealTilesAsync = makeAsyncCall(worldClient, 'RevealTiles', 'world-service');
+const setTileAsync = makeAsyncCall(worldClient, 'SetTile', 'world-service');
 const getHeroAsync = makeAsyncCall(heroClient, 'GetHero', 'hero-service');
 const updatePositionAsync = makeAsyncCall(heroClient, 'UpdatePosition', 'hero-service');
 const getEffectiveStatsAsync = makeAsyncCall(heroClient, 'GetEffectiveStats', 'hero-service');
 const startGameAsync = makeAsyncCall(gameClient, 'StartGame', 'game-service');
 const getKeymapAsync = makeAsyncCall(gameClient, 'GetKeymap', 'game-service');
+const getGameStateAsync = makeAsyncCall(gameClient, 'GetGameState', 'game-service');
 
 // ── Helper: build layers from world tiles and run render pipeline ──────
 async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, currentEnemiesJson, trace) {
@@ -316,7 +318,7 @@ async function computeMapModifiers(call, callback) {
       isInit = true;
 
       // Start the game, which pre-generates the entire map
-      await startGameAsync({ level: 0 }, trace);
+      const gameRes = await startGameAsync({ level: 0, campaignId: 'default' }, trace);
 
       // Now fetch the populated world state
       const newWorldState = await getWorldStateAsync({}, trace);
@@ -328,7 +330,7 @@ async function computeMapModifiers(call, callback) {
       // Update hero with initial position
       await updatePositionAsync({ heroId: 'default', x: px, y: py }, trace);
 
-      console.log(`[DndService] Initialized world via game-service`);
+      console.log(`[DndService] Initialized world via game-service: ${gameRes.levelName || 'Level 0'}`);
     }
 
     // 4. Run render pipeline with hero's effective visibility
@@ -393,7 +395,7 @@ async function processInput(call, callback) {
 
     // 3. If world is empty, initialize via game-service
     if (Object.keys(tilesDict).length === 0) {
-      await startGameAsync({ level: level || 0 }, trace);
+      const gameRes = await startGameAsync({ level: level || 0, campaignId: 'default' }, trace);
 
       const initRes = await getWorldStateAsync({}, trace);
       tilesJsonStr = initRes.tilesJson || '{}';
@@ -401,7 +403,7 @@ async function processInput(call, callback) {
       px = 0;
       py = 0;
       await updatePositionAsync({ heroId: 'default', x: px, y: py }, trace);
-      console.log(`[DndService] Initialized world via ProcessInput through game-service`);
+      console.log(`[DndService] Initialized world via ProcessInput: ${gameRes.levelName || 'Level 0'}`);
     }
 
     // 4. Fetch dynamic keymap
@@ -451,6 +453,29 @@ async function processInput(call, callback) {
         if (!foundDoor) {
           inputResult.message = 'There is no door nearby.';
         }
+      } else if (actionId === 'close') {
+        // Close: find an adjacent open doorway (floor tile on a wall boundary)
+        // We look for '.' tiles that were previously doors — these are adjacent to walls on 3+ sides
+        const adjacent = [{ x: px, y: py - 1 }, { x: px, y: py + 1 }, { x: px - 1, y: py }, { x: px + 1, y: py }];
+        let foundOpening = false;
+        for (const pos of adjacent) {
+          const tile = getTile(pos.x, pos.y);
+          if (tile !== '.') continue;
+          // Check if this floor tile is on a wall boundary (adjacent to walls on 2+ sides = doorway)
+          let wallCount = 0;
+          if (getTile(pos.x, pos.y - 1) === '#') wallCount++;
+          if (getTile(pos.x, pos.y + 1) === '#') wallCount++;
+          if (getTile(pos.x - 1, pos.y) === '#') wallCount++;
+          if (getTile(pos.x + 1, pos.y) === '#') wallCount++;
+          if (wallCount >= 2) {
+            inputResult = { newX: px, newY: py, action: 'close_door', message: '', doorX: pos.x, doorY: pos.y, positionChanged: false };
+            foundOpening = true;
+            break;
+          }
+        }
+        if (!foundOpening) {
+          inputResult.message = 'There is nothing to close nearby.';
+        }
       } else if (actionId === 'wait') {
         inputResult = { newX: px, newY: py, action: 'wait', message: 'You wait...', positionChanged: false };
       } else {
@@ -467,14 +492,19 @@ async function processInput(call, callback) {
       await updatePositionAsync({ heroId: 'default', x: px, y: py }, trace);
     }
 
-    // 6. If open_door, run the explore flow
+    // 6. If open_door, convert door to floor and run explore flow
     if (inputResult.action === 'open_door') {
+      const anchorX = inputResult.doorX;
+      const anchorY = inputResult.doorY;
+
+      // Always convert the door tile to floor first (door is now open)
+      const setRes = await setTileAsync({ x: anchorX, y: anchorY, tileChar: '.' }, trace);
+      tilesJsonStr = setRes.tilesJson;
+      roomsJsonStr = setRes.roomsJson;
+
       const typeRoll = await rollDiceAsync(['1d20'], trace);
       const score = typeRoll.grandTotal;
       const isRoom = score <= 8;
-
-      const anchorX = inputResult.doorX;
-      const anchorY = inputResult.doorY;
 
       let structureType, width, height, description, doors, direction, generatorTilesJson;
 
@@ -511,12 +541,18 @@ async function processInput(call, callback) {
         message = `${message} You discover a ${structureType}: ${description}`;
         console.log(`[DndService] ProcessInput: explored ${structureType} at ${placeRes.originX},${placeRes.originY}`);
       } else {
-        message = 'The doorway collapses into solid rock...';
-        // Refresh world state (door may have been consumed)
-        const refreshed = await getWorldStateAsync({}, trace);
-        tilesJsonStr = refreshed.tilesJson;
-        roomsJsonStr = refreshed.roomsJson;
+        message = 'The door opens to solid rock...';
       }
+    }
+
+    // 6b. If close_door, convert adjacent floor back to door
+    if (inputResult.action === 'close_door') {
+      const dx = inputResult.doorX;
+      const dy = inputResult.doorY;
+      const setRes = await setTileAsync({ x: dx, y: dy, tileChar: '+' }, trace);
+      tilesJsonStr = setRes.tilesJson;
+      roomsJsonStr = setRes.roomsJson;
+      message = 'You close the door.';
     }
 
     // 7. Run render pipeline with hero's effective visibility

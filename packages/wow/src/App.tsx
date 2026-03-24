@@ -9,15 +9,21 @@ import {
 import {
   healthCheck,
   getHero,
+  getInventory,
   syncTurn,
   sendInput,
   getKeymap,
   getCampaign,
+  getGameState,
+  startNewAdventure,
   type HeroState,
   type Inspector,
   type LogEntry as ApiLogEntry,
-  type Tile
+  type Tile,
+  type InventoryState,
 } from './api'
+import StarfieldBg from './StarfieldBg'
+import InventoryModal from './InventoryModal'
 import './index.css'
 
 type ServiceStatus = 'connecting' | 'online' | 'offline'
@@ -36,6 +42,9 @@ function App() {
   const [defaultKeymap, setDefaultKeymap] = useState<Record<string, any>>({})
   const [keymap, setKeymap] = useState<Record<string, any>>({})
   const [campaigns, setCampaigns] = useState<any[]>([])
+  const [levelName, setLevelName] = useState<string>('')
+  const [showInventory, setShowInventory] = useState(false)
+  const [inventory, setInventory] = useState<InventoryState | null>(null)
 
   // Multi-layered visual state orchestrator
   const [mapGrid, setMapGrid] = useState<Tile[][]>([])
@@ -44,9 +53,8 @@ function App() {
   const initialSyncDone = useRef(false)
 
   useEffect(() => {
-    getHero()
-      .then((res) => setHero(res.data))
-      .catch(() => {})
+    getHero().then((res) => setHero(res.data)).catch(() => {})
+    getInventory().then((res) => setInventory(res.data)).catch(() => {})
   }, [])
 
   // Check service health
@@ -95,13 +103,19 @@ function App() {
 
     const ws = serializeWorldState(gameState)
     syncTurn(ws.playerX, ws.playerY, ws.currentEnemiesJson, 8, ws.level)
-      .then((res) => {
+      .then(async (res) => {
         applyOverlay(res.data.actions || null)
 
         const mapData = res.data.map
         if (!mapData.merged_tiles_json) return
 
         setMapGrid(JSON.parse(mapData.merged_tiles_json))
+
+        // Fetch game state for level name
+        try {
+          const gsRes = await getGameState()
+          if (gsRes.data.levelName) setLevelName(gsRes.data.levelName)
+        } catch {}
 
         setGameState(prev => {
           const update: Partial<GameState> = {}
@@ -124,7 +138,7 @@ function App() {
         console.error('Initial sync error:', err)
         initialSyncDone.current = false // retry on next render
       })
-  }, [serviceStatus])
+  }, [serviceStatus, screen])
 
   /** Append log entries from an API response into the game state */
   const appendServiceLogs = useCallback((apiLogs: ApiLogEntry[]) => {
@@ -218,6 +232,10 @@ function App() {
       })
 
       applyOverlay(data.actions || null)
+
+      // Refresh inventory + hero after each action
+      getInventory().then((r) => setInventory(r.data)).catch(() => {})
+      getHero().then((r) => setHero(r.data)).catch(() => {})
     } catch (err) {
       console.error('Input error:', err)
       addMessage('Connection lost... (services may be offline)', 'system', 'wow')
@@ -228,7 +246,12 @@ function App() {
   // Keyboard handler — routes all game keys to server
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (screen !== 'game' || processing || serviceStatus !== 'online') return
+      if (screen !== 'game' || serviceStatus !== 'online') return
+
+      // Inventory modal intercepts its own keys
+      if (showInventory) return
+
+      if (processing) return
 
       let key = e.key
       let actionId = null
@@ -238,6 +261,13 @@ function App() {
           actionId = id
           break
         }
+      }
+
+      // Intercept inventory action — open modal instead of sending to server
+      if (actionId === 'inventory') {
+        e.preventDefault()
+        setShowInventory(true)
+        return
       }
 
       if (actionId) {
@@ -252,7 +282,7 @@ function App() {
       window.addEventListener('keydown', handleKeyDown)
     }
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleInput, screen, keymap, defaultKeymap, processing, serviceStatus])
+  }, [handleInput, screen, keymap, defaultKeymap, processing, serviceStatus, showInventory])
 
   // Render colored ASCII map
   const renderColoredMap = () => {
@@ -294,36 +324,66 @@ function App() {
 
   if (screen === 'splash') {
     return (
-      <div className="game-container splash-screen" style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-        <pre className="ascii-title" style={{ color: 'var(--terminal-alert)', textShadow: '0 0 10px var(--terminal-alert)', userSelect: 'none' }}>
-{`
- __    __           _     _             __   __      __    __      _      _
-/ / /\\ \\ \\___  _ __| | __| |   ___  __  \\ \\ / / /\\ \\ \\___| |    / \\    (_)
-\\ \\/  \\/ / _ \\| '__| |/ _\` |  / _ \\/ _|  \\ V / /  \\/ / _ \\ |   / _ \\   | |
- \\  /\\  / (_) | |  | | (_| | |  __/ (_| |  | |  /\\  / (_) | |  / ___ \\  | |
-  \\/  \\/ \\___/|_|  |_|\\__,_|  \\___|\\__,_|  \\_/\\/  \\/ \\___/|_| /_/   \\_\\ |_|
-`}
-        </pre>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '40px', width: '300px' }}>
-          <button 
-            className="splash-btn"
-            style={{ padding: '15px', fontSize: '1.2em', cursor: 'pointer', background: 'transparent', color: 'var(--terminal-text)', border: '1px solid var(--terminal-dim)' }}
-            onClick={() => setScreen('game')}
-            disabled={serviceStatus !== 'online'}
-          >
-            Play Campaign: {campaigns[0]?.id || '...'}
-          </button>
-          <button 
-            className="splash-btn"
-            style={{ padding: '15px', fontSize: '1.2em', cursor: 'pointer', background: 'transparent', color: 'var(--terminal-text)', border: '1px solid var(--terminal-dim)' }}
-            onClick={() => setScreen('settings')}
-            disabled={serviceStatus !== 'online'}
-          >
-            Settings
-          </button>
-        </div>
-        <div style={{ marginTop: '30px' }}>
-          Service Status: <span className={`status-dot ${serviceStatus}`} />
+      <div className="game-container splash-screen" style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+        <StarfieldBg />
+        <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <pre className="ascii-title" style={{ color: 'var(--terminal-accent)', textShadow: '0 0 30px var(--terminal-accent), 0 0 60px rgba(255,180,84,0.3)', userSelect: 'none', fontSize: '3em', lineHeight: 1.2, fontFamily: 'var(--font-mono)' }}>{
+`\u2588   \u2588  \u2588\u2588\u2588  \u2588   \u2588
+\u2588   \u2588 \u2588   \u2588 \u2588   \u2588
+\u2588 \u2588 \u2588 \u2588   \u2588 \u2588 \u2588 \u2588
+\u2588\u2588 \u2588\u2588 \u2588   \u2588 \u2588\u2588 \u2588\u2588
+\u2588   \u2588  \u2588\u2588\u2588  \u2588   \u2588`
+          }</pre>
+          <div className="splash-subtitle" style={{ color: 'var(--terminal-dim)', fontSize: '12px', letterSpacing: '6px', textTransform: 'uppercase', marginTop: '8px' }}>
+            World of WoW
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '50px', width: '320px' }}>
+            <button
+              className="splash-btn"
+              onClick={() => setScreen('game')}
+              disabled={serviceStatus !== 'online'}
+            >
+              Continue
+            </button>
+            <button
+              className="splash-btn"
+              onClick={async () => {
+                // Clear all cookies
+                document.cookie.split(';').forEach(c => {
+                  document.cookie = c.trim().split('=')[0] + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/'
+                })
+                // Reset frontend state
+                initialSyncDone.current = false
+                setMapGrid([])
+                setGameState(createInitialState())
+                setHero(null)
+                setOverlay(null)
+                setLevelName('')
+                // Reset server state and generate fresh world
+                try {
+                  await startNewAdventure('default')
+                  const heroRes = await getHero()
+                  setHero(heroRes.data)
+                } catch (err) {
+                  console.error('New adventure error:', err)
+                }
+                setScreen('game')
+              }}
+              disabled={serviceStatus !== 'online' || processing}
+            >
+              New Adventure
+            </button>
+            <button
+              className="splash-btn"
+              onClick={() => setScreen('settings')}
+              disabled={serviceStatus !== 'online'}
+            >
+              Settings
+            </button>
+          </div>
+          <div style={{ marginTop: '30px', fontSize: '12px', color: 'var(--terminal-dim)' }}>
+            Service Status: <span className={`status-dot ${serviceStatus}`} />
+          </div>
         </div>
       </div>
     )
@@ -340,28 +400,28 @@ function App() {
     }
 
     return (
-      <div className="game-container settings-screen" style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '50px' }}>
-         <h1 style={{ color: 'var(--terminal-alert)', marginBottom: '30px' }}>Settings</h1>
-         <div className="settings-form" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', width: '600px', overflowY: 'auto' }}>
-           {Object.entries(keymap).map(([mapId, mapDef]) => (
-             <div key={mapId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,0,0,0.5)', padding: '10px' }}>
-                <span style={{ color: 'var(--terminal-dim)' }}>{mapDef.label || mapId}</span>
-                <input 
-                  style={{ width: '40px', background: 'transparent', border: '1px solid var(--terminal-highlight)', color: '#fff', textAlign: 'center', padding: '5px' }}
-                  value={mapDef.key} 
-                  maxLength={1}
-                  onChange={(e) => setKeymap(prev => ({ ...prev, [mapId]: { ...prev[mapId], key: e.target.value } }))}
-                />
-             </div>
-           ))}
-         </div>
-         <div style={{ marginTop: '40px', display: 'flex', gap: '20px' }}>
-           <button 
-              style={{ padding: '10px 20px', cursor: 'pointer', background: 'transparent', border: '1px solid var(--terminal-text)', color: 'var(--terminal-text)' }}
-              onClick={saveSettings}
-            >
-              Save and Return
-            </button>
+      <div className="game-container settings-screen" style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '50px', position: 'relative' }}>
+         <StarfieldBg />
+         <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+           <h1 style={{ color: 'var(--terminal-accent)', marginBottom: '30px' }}>Settings</h1>
+           <div className="settings-form" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', width: '600px', overflowY: 'auto' }}>
+             {Object.entries(keymap).map(([mapId, mapDef]) => (
+               <div key={mapId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(10,14,20,0.7)', padding: '10px', borderRadius: '4px', border: '1px solid var(--terminal-border)' }}>
+                  <span style={{ color: 'var(--terminal-dim)', fontSize: '13px' }}>{mapDef.label || mapId}</span>
+                  <input
+                    style={{ width: '40px', background: 'transparent', border: '1px solid var(--terminal-dim)', color: 'var(--terminal-bright)', textAlign: 'center', padding: '5px', fontFamily: 'var(--font-mono)', borderRadius: '3px' }}
+                    value={mapDef.key}
+                    maxLength={1}
+                    onChange={(e) => setKeymap(prev => ({ ...prev, [mapId]: { ...prev[mapId], key: e.target.value } }))}
+                  />
+               </div>
+             ))}
+           </div>
+           <div style={{ marginTop: '40px', display: 'flex', gap: '20px' }}>
+             <button className="splash-btn" onClick={saveSettings}>
+               Save and Return
+             </button>
+           </div>
          </div>
       </div>
     )
@@ -371,7 +431,7 @@ function App() {
     <div className="game-container">
       {/* Header */}
       <div className="header-bar">
-        <h1>⚔ World of WoW ⚔</h1>
+        <h1 style={{ cursor: 'pointer' }} onClick={() => setScreen('splash')}>⚔ World of WoW ⚔</h1>
         <div className="status-indicators">
           <span className={`status-dot ${serviceStatus}`}>dice</span>
           <span className={`status-dot ${serviceStatus}`}>dnd</span>
@@ -384,12 +444,13 @@ function App() {
           <span className={`status-dot ${serviceStatus}`}>enm</span>
           <span className={`status-dot ${serviceStatus}`}>wld</span>
           <span className={`status-dot ${serviceStatus}`}>inp</span>
+          <span className={`status-dot ${serviceStatus}`}>gam</span>
         </div>
       </div>
 
       {/* Map Panel */}
       <div className="map-panel">
-        <div className="panel-title">Dungeon — Level {gameState.level}</div>
+        <div className="panel-title">Dungeon — {levelName || `Level ${gameState.level}`}</div>
         <div className="map-viewport">
           {processing && mapGrid.length === 0 ? (
             <div className="loading-overlay">
@@ -427,20 +488,71 @@ function App() {
           </div>
         </div>
 
-        {/* Message Log */}
+        {/* Character */}
         <div className="log-panel">
-          <div className="panel-title">Message Log</div>
-          <div className="log-messages">
-            {gameState.messages
-              .filter((m) => !m.source || m.source === 'wow' || m.source === 'system' || m.source === 'dnd')
-              .reverse()
-              .slice(0, 20)
-              .map((msg, i) => (
-                <div key={i} className={`log-entry ${msg.type}`}>
-                  <span className="log-prefix">{'>'} </span>
-                  {msg.text}
-                </div>
-              ))}
+          <div className="panel-title">Character</div>
+          <div className="character-body">
+            <pre className="body-ascii">{[
+'    ┌───┐    ',
+'    │o o│    ',
+'    │ ▲ │    ',
+'    └─┬─┘    ',
+'      │      ',
+'  ┌───┼───┐  ',
+'  │   │   │  ',
+'──┤   │   ├──',
+'  │   │   │  ',
+'  └───┼───┘  ',
+'      │      ',
+'  ┌───┴───┐  ',
+'  │       │  ',
+'  │       │  ',
+'  └──┬─┬──┘  ',
+'     │ │     ',
+'     │ │     ',
+'    ─┘ └─    ',
+            ].join('\n')}</pre>
+            <div className="equip-slots">
+              {([
+                ['head',       'Head    '],
+                ['neck',       'Neck    '],
+                ['chest',      'Chest   '],
+                ['right hand', 'R.Hand  '],
+                ['left hand',  'L.Hand  '],
+                ['legs',       'Legs    '],
+                ['feet',       'Feet    '],
+                ['finger',     'Finger  '],
+              ] as const).map(([slot, label]) => {
+                const items = inventory?.items || []
+                const equipped = items.find(it =>
+                  it.canFit && it.canFit.includes(slot)
+                )
+                return (
+                  <div key={slot} className={`equip-row ${equipped ? 'filled' : ''}`}>
+                    <span className="equip-label">{label}</span>
+                    <span className="equip-item">{equipped ? equipped.name : '---'}</span>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="equip-divider" />
+            <div className="equip-gold">Gold: {inventory?.gold ?? 0}</div>
+            <div className="equip-capacity">Backpack: {inventory?.items.length ?? 0}/{inventory?.capacity ?? 20}</div>
+            <div className="inv-items-list">
+              {(inventory?.items || []).map((item, i) => {
+                const icon = item.itemType === 'weapon' ? '/' : item.itemType === 'armor' ? '[' : item.itemType === 'potion' ? '!' : item.itemType === 'scroll' ? '?' : '*'
+                return (
+                  <div key={item.itemId || i} className="inv-item-row">
+                    <span className="inv-item-icon">{icon}</span>
+                    <span className="inv-item-name">{item.name}</span>
+                    {item.quantity > 1 && <span className="inv-item-qty">x{item.quantity}</span>}
+                  </div>
+                )
+              })}
+              {(inventory?.items || []).length === 0 && (
+                <div className="inv-item-row empty">Backpack is empty</div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -499,17 +611,17 @@ function App() {
           )}
         </div>
 
-        {/* Right third: Service log */}
+        {/* Right third: Event log */}
         <div className="service-log">
-          <div className="service-log-title">Service Log</div>
+          <div className="service-log-title">Event Log</div>
           <div className="service-log-messages">
             {gameState.messages
-              .filter((m) => m.source && m.source !== 'wow' && m.source !== 'system' && m.source !== 'dnd')
+              .slice()
               .reverse()
-              .slice(0, 20)
+              .slice(0, 30)
               .map((msg, i) => (
-                <div key={i} className={`slog-entry ${msg.type}`}>
-                  <span className="slog-source">[{msg.source}]</span>
+                <div key={i} className={`log-entry ${msg.type}`}>
+                  <span className="log-prefix">{'>'} </span>
                   {msg.text}
                 </div>
               ))}
@@ -517,6 +629,11 @@ function App() {
         </div>
 
       </div>
+
+      {/* Inventory Modal */}
+      {showInventory && (
+        <InventoryModal onClose={() => setShowInventory(false)} />
+      )}
     </div>
   )
 }

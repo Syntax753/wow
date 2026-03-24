@@ -1,0 +1,9 @@
+node_modules
+.git
+.gitignore
+.env
+*.md
+cluster.err
+test_result*.json
+packages/wow/dist
+packages/wow/node_modules/.vite

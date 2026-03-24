@@ -1,0 +1,7 @@
+.git
+.gitignore
+node_modules
+*.md
+cluster.err
+test_result*.json
+packages/wow/dist
