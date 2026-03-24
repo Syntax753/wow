@@ -37,6 +37,21 @@ function rollDiceAsync(diceArray, trace) {
   });
 }
 
+// Normal distribution via Box-Muller transform.
+// mode=5, 99% of values between 3 and 7 → σ ≈ 0.775
+// Clamped to [3, 100] to allow rare large rooms.
+const ROOM_DIM_MEAN = 5;
+const ROOM_DIM_SIGMA = 0.775;
+
+function rollRoomDimension() {
+  // Box-Muller: two uniform randoms → one normal sample
+  const u1 = Math.random();
+  const u2 = Math.random();
+  const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+  const raw = Math.round(ROOM_DIM_MEAN + z * ROOM_DIM_SIGMA);
+  return Math.max(3, Math.min(100, raw));
+}
+
 // Generate a room structure in local coordinates (origin 0,0).
 // No world knowledge — just dimensions, tiles, doors, and a description.
 async function generateRoom(call, callback) {
@@ -50,12 +65,9 @@ async function generateRoom(call, callback) {
   };
 
   try {
-    // Roll dimensions
-    const wRoll = await rollDiceAsync(['2d4'], trace);
-    const width = wRoll.grandTotal + 1; // 3 to 9
-
-    const hRoll = await rollDiceAsync(['2d4'], trace);
-    const height = hRoll.grandTotal + 1; // 3 to 9
+    // Roll dimensions — normal distribution, mode=5, 99% between 3-7, max 100
+    const width = rollRoomDimension();
+    const height = rollRoomDimension();
 
     // Build local tile map
     const localTiles = {};
