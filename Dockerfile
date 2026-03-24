@@ -20,7 +20,7 @@ COPY packages/generators/room-service/package.json packages/generators/room-serv
 COPY packages/generators/enemy-service/package.json packages/generators/enemy-service/
 COPY packages/wow/package.json packages/wow/
 
-RUN npm ci
+RUN npm install --loglevel verbose 2>&1
 
 # Copy all source
 COPY . .
