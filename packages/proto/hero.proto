@@ -7,6 +7,7 @@ service HeroService {
   rpc UpdateStat (UpdateStatRequest) returns (HeroState) {}
   rpc ResetHero (ResetHeroRequest) returns (HeroState) {}
   rpc UpdatePosition (UpdatePositionRequest) returns (HeroState) {}
+  rpc GetEffectiveStats (GetHeroRequest) returns (EffectiveStatsResponse) {}
 }
 
 message TraceInfo {
@@ -61,5 +62,19 @@ message HeroState {
   int32 armor_class = 13;
   int32 position_x = 15;
   int32 position_y = 16;
+  int32 visibility = 17;
   TraceInfo trace = 14;
+}
+
+message EffectiveStatsResponse {
+  int32 strength = 1;
+  int32 vitality = 2;
+  int32 agility = 3;
+  int32 wisdom = 4;
+  int32 armor_class = 5;
+  int32 visibility = 6;
+  int32 attack = 7;
+  int32 defense = 8;
+  map<string, int32> bonuses = 9;
+  TraceInfo trace = 10;
 }

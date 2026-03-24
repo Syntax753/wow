@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package game;
+
+service GameService {
+  rpc StartGame (StartGameRequest) returns (StartGameResponse) {}
+}
+
+message TraceInfo {
+  string trace_id = 1;
+  string span_id = 2;
+  int64 time_start = 3;
+  int64 time_end = 4;
+  string service_name = 5;
+  string data = 6;
+  string data_ret = 7;
+  repeated TraceInfo sub_spans = 8;
+}
+
+message StartGameRequest {
+  int32 level = 1;
+  TraceInfo trace = 2;
+}
+
+message StartGameResponse {
+  bool success = 1;
+  TraceInfo trace = 2;
+}

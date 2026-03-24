@@ -5,9 +5,11 @@
  */
 const http = require('http');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { grpc, DiceService, DndService, HeroService, InventoryService, ActionService, WorldService } = require('@wow/proto');
 
-const API_PORT = process.env.API_PORT || 3001;
+const API_PORT = process.env.PORT || process.env.API_PORT || 3001;
 const DICE_URL = process.env.DICE_SERVICE_URL || 'localhost:50051';
 const DND_URL = process.env.DND_SERVICE_URL || 'localhost:50052';
 const HERO_URL = process.env.HERO_SERVICE_URL || 'localhost:50053';
@@ -95,6 +97,43 @@ function json(res, statusCode, data) {
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     json(res, 204, {});
+    return;
+  }
+
+  // Very basic static file serving for React frontend
+  if (!req.url.startsWith('/api') && req.method === 'GET') {
+    let filePath = path.join(__dirname, 'dist', req.url === '/' ? 'index.html' : req.url);
+    const extname = path.extname(filePath);
+    let contentType = 'text/html';
+    switch (extname) {
+      case '.js': contentType = 'text/javascript'; break;
+      case '.css': contentType = 'text/css'; break;
+      case '.json': contentType = 'application/json'; break;
+      case '.png': contentType = 'image/png'; break;
+      case '.jpg': contentType = 'image/jpg'; break;
+    }
+
+    fs.readFile(filePath, (error, content) => {
+      if (error) {
+        if (error.code === 'ENOENT') {
+          fs.readFile(path.join(__dirname, 'dist', 'index.html'), (err, content) => {
+            if (!err) {
+              res.writeHead(200, { 'Content-Type': 'text/html' });
+              res.end(content, 'utf-8');
+            } else {
+              res.writeHead(500);
+              res.end('Static file serving error: ' + error.code + ' ..\n');
+            }
+          });
+        } else {
+          res.writeHead(500);
+          res.end('Server Error: ' + error.code + ' ..\n');
+        }
+      } else {
+        res.writeHead(200, { 'Content-Type': contentType });
+        res.end(content, 'utf-8');
+      }
+    });
     return;
   }
 

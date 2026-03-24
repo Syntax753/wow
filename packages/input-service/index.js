@@ -10,18 +10,15 @@ const TILE_UNKNOWN = ' ';
 
 // Map keys to movement deltas
 const MOVE_KEYS = {
-  'w': { dx: 0, dy: -1 },
-  'W': { dx: 0, dy: -1 },
-  'ArrowUp': { dx: 0, dy: -1 },
-  's': { dx: 0, dy: 1 },
-  'S': { dx: 0, dy: 1 },
-  'ArrowDown': { dx: 0, dy: 1 },
-  'a': { dx: -1, dy: 0 },
-  'A': { dx: -1, dy: 0 },
-  'ArrowLeft': { dx: -1, dy: 0 },
-  'd': { dx: 1, dy: 0 },
-  'D': { dx: 1, dy: 0 },
-  'ArrowRight': { dx: 1, dy: 0 },
+  // Numpad Support
+  '8': { dx: 0, dy: -1 }, // North
+  '2': { dx: 0, dy: 1 },  // South
+  '4': { dx: -1, dy: 0 }, // West
+  '6': { dx: 1, dy: 0 },  // East
+  '7': { dx: -1, dy: -1 }, // NorthWest
+  '9': { dx: 1, dy: -1 },  // NorthEast
+  '1': { dx: -1, dy: 1 },  // SouthWest
+  '3': { dx: 1, dy: 1 },   // SouthEast
 };
 
 function processInput(call, callback) {
@@ -131,8 +128,8 @@ function processInput(call, callback) {
       return;
     }
 
-    // '.' key — wait
-    if (key === '.') {
+    // '.' or '5' key — wait
+    if (key === '.' || key === '5') {
       callback(null, {
         newX: px, newY: py,
         action: 'wait',

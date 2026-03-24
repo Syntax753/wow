@@ -23,11 +23,15 @@
   box-sizing: border-box;
 }
 
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   background: #050810;
   color: var(--terminal-fg);
   font-family: var(--font-mono);
-  min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -35,6 +39,7 @@ body {
 
 #root {
   width: 100%;
+  height: 100%;
   max-width: 1200px;
   margin: 0 auto;
   padding: 16px;
@@ -43,9 +48,10 @@ body {
 .game-container {
   display: grid;
   grid-template-columns: 1fr 320px;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 8px;
   height: calc(100vh - 32px);
+  overflow: hidden;
 }
 
 /* === Header Bar === */

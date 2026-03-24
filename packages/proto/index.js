@@ -31,6 +31,7 @@ const renderProto = loadProto('render.proto');
 const enemyProto = loadProto('enemy.proto');
 const worldProto = loadProto('world.proto');
 const inputProto = loadProto('input.proto');
+const gameProto = loadProto('game.proto');
 
 module.exports = {
   grpc,
@@ -43,6 +44,7 @@ module.exports = {
   shadeProto,
   renderProto,
   worldProto,
+  gameProto,
   DiceService: diceProto.dice.DiceService,
   DndService: dndProto.dnd.DndService,
   HeroService: heroProto.hero.HeroService,
@@ -54,4 +56,5 @@ module.exports = {
   EnemyService: enemyProto.enemy.EnemyService,
   WorldService: worldProto.world.WorldService,
   InputService: inputProto.input.InputService,
+  GameService: gameProto.game.GameService,
 };

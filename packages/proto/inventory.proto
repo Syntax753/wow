@@ -7,6 +7,17 @@ service InventoryService {
   rpc AddItem (AddItemRequest) returns (InventoryState) {}
   rpc DropItem (DropItemRequest) returns (InventoryState) {}
   rpc UseItem (UseItemRequest) returns (UseItemResponse) {}
+  rpc GetStatBonuses (GetStatBonusesRequest) returns (StatBonusesResponse) {}
+}
+
+message GetStatBonusesRequest {
+  string hero_id = 1;
+  TraceInfo trace = 2;
+}
+
+message StatBonusesResponse {
+  map<string, int32> bonuses = 1;
+  TraceInfo trace = 2;
 }
 
 message TraceInfo {

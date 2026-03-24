@@ -8,7 +8,16 @@ const inventories = {};
 function defaultInventory(heroId) {
   return {
     heroId: heroId || 'default',
-    items: [],
+    items: [
+      {
+        itemId: 'torch_1',
+        name: 'Torch',
+        description: 'A flickering wooden torch. Illuminates nearby tiles.',
+        itemType: 'misc',
+        quantity: 1,
+        modifiers: { visibility: 4 },
+      }
+    ],
     capacity: 20,
     gold: 0,
   };
@@ -145,9 +154,39 @@ function useItem(call, callback) {
   });
 }
 
+// Sum all modifiers across all items in the inventory
+function getStatBonuses(call, callback) {
+  const trace = {
+    traceId: call.request.trace?.traceId,
+    spanId: call.request.trace?.spanId,
+    timeStart: Date.now(),
+    serviceName: 'inventory-service',
+    data: JSON.stringify(call.request),
+    subSpans: []
+  };
+
+  const { heroId } = call.request;
+  const id = heroId || 'default';
+  if (!inventories[id]) {
+    inventories[id] = defaultInventory(id);
+  }
+
+  const bonuses = {};
+  for (const item of inventories[id].items) {
+    if (item.modifiers) {
+      for (const [stat, value] of Object.entries(item.modifiers)) {
+        bonuses[stat] = (bonuses[stat] || 0) + value;
+      }
+    }
+  }
+
+  console.log(`[InventoryService] GetStatBonuses: ${id} =>`, bonuses);
+  callback(null, { bonuses, trace });
+}
+
 function main() {
   const server = new grpc.Server();
-  server.addService(InventoryService.service, { getInventory, addItem, dropItem, useItem });
+  server.addService(InventoryService.service, { getInventory, addItem, dropItem, useItem, getStatBonuses });
   server.bindAsync(
     `0.0.0.0:${PORT}`,
     grpc.ServerCredentials.createInsecure(),

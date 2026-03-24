@@ -1,4 +1,4 @@
-const { grpc, DiceService, DndService, RoomService, RenderService, EnemyService, ShadeService, WorldService, HeroService, InputService } = require('@wow/proto');
+const { grpc, DiceService, DndService, RoomService, RenderService, EnemyService, ShadeService, WorldService, HeroService, InputService, GameService } = require('@wow/proto');
 const crypto = require('crypto');
 
 const PORT = process.env.DND_SERVICE_PORT || '50052';
@@ -10,6 +10,7 @@ const SHADE_SERVICE_URL = process.env.SHADE_SERVICE_URL || 'localhost:50057';
 const WORLD_SERVICE_URL = process.env.WORLD_SERVICE_URL || 'localhost:50060';
 const HERO_SERVICE_URL = process.env.HERO_SERVICE_URL || 'localhost:50053';
 const INPUT_SERVICE_URL = process.env.INPUT_SERVICE_URL || 'localhost:50061';
+const GAME_SERVICE_URL = process.env.GAME_SERVICE_URL || 'localhost:50062';
 
 const diceClient = new DiceService(DICE_SERVICE_URL, grpc.credentials.createInsecure());
 const roomClient = new RoomService(ROOM_SERVICE_URL, grpc.credentials.createInsecure());
@@ -19,6 +20,7 @@ const shadeClient = new ShadeService(SHADE_SERVICE_URL, grpc.credentials.createI
 const worldClient = new WorldService(WORLD_SERVICE_URL, grpc.credentials.createInsecure());
 const heroClient = new HeroService(HERO_SERVICE_URL, grpc.credentials.createInsecure());
 const inputClient = new InputService(INPUT_SERVICE_URL, grpc.credentials.createInsecure());
+const gameClient = new GameService(GAME_SERVICE_URL, grpc.credentials.createInsecure());
 
 function cloneReqRes(obj) {
   const clone = { ...obj };
@@ -95,7 +97,9 @@ const resetWorldAsync = makeAsyncCall(worldClient, 'ResetWorld', 'world-service'
 const revealTilesAsync = makeAsyncCall(worldClient, 'RevealTiles', 'world-service');
 const getHeroAsync = makeAsyncCall(heroClient, 'GetHero', 'hero-service');
 const updatePositionAsync = makeAsyncCall(heroClient, 'UpdatePosition', 'hero-service');
+const getEffectiveStatsAsync = makeAsyncCall(heroClient, 'GetEffectiveStats', 'hero-service');
 const processInputAsync = makeAsyncCall(inputClient, 'ProcessInput', 'input-service');
+const startGameAsync = makeAsyncCall(gameClient, 'StartGame', 'game-service');
 
 // ── Helper: build layers from world tiles and run render pipeline ──────
 async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, currentEnemiesJson, trace) {
@@ -171,7 +175,11 @@ async function exploreDoor(call, callback) {
   };
 
   try {
-    // 1. Roll 1d20 to determine Room vs Corridor
+    // 1. Get hero effective stats for visibility
+    const effectiveStats = await getEffectiveStatsAsync({ heroId: 'default' }, trace);
+    const visualRange = effectiveStats.visibility || 6;
+
+    // 2. Roll 1d20 to determine Room vs Corridor
     const typeRoll = await rollDiceAsync(['1d20'], trace);
     const score = typeRoll.grandTotal;
     const isRoom = score <= 8; // 1-8 Room, 9-20 Corridor
@@ -240,7 +248,7 @@ async function exploreDoor(call, callback) {
     const rendered = await buildAndRender(
       placeRes.tilesJson, placeRes.roomsJson,
       px, py,
-      call.request.visualRange,
+      visualRange,
       call.request.currentEnemiesJson,
       trace
     );
@@ -283,8 +291,10 @@ async function computeMapModifiers(call, callback) {
   try {
     let isInit = false;
 
-    // 1. Get hero position (server-side source of truth)
+    // 1. Get hero position and effective stats
     const hero = await getHeroAsync({ heroId: 'default' }, trace);
+    const effectiveStats = await getEffectiveStatsAsync({ heroId: 'default' }, trace);
+    const visualRange = effectiveStats.visibility || 6;
     let px = call.request.playerX ?? hero.positionX ?? 0;
     let py = call.request.playerY ?? hero.positionY ?? 0;
 
@@ -301,38 +311,31 @@ async function computeMapModifiers(call, callback) {
     let tilesDict;
     try { tilesDict = JSON.parse(tilesJsonStr); } catch { tilesDict = {}; }
 
-    // 3. If world is empty, initialize with a starter room
+    // 3. If world is empty, initialize via game-service
     if (Object.keys(tilesDict).length === 0) {
       isInit = true;
 
-      // Generate a room via room-service (pure generator)
-      const roomRes = await generateRoomAsync({ level: 1 }, trace);
+      // Start the game, which pre-generates the entire map
+      await startGameAsync({ level: 0 }, trace);
 
-      // Initialize world via world-service (places room centered at 0,0)
-      const initRes = await initWorldAsync({
-        width: roomRes.width,
-        height: roomRes.height,
-        description: roomRes.description,
-        tilesJson: roomRes.tilesJson,
-        doors: roomRes.doors || []
-      }, trace);
-
-      tilesJsonStr = initRes.tilesJson;
-      roomsJsonStr = initRes.roomsJson;
-      px = initRes.playerX;
-      py = initRes.playerY;
+      // Now fetch the populated world state
+      const newWorldState = await getWorldStateAsync({}, trace);
+      tilesJsonStr = newWorldState.tilesJson || '{}';
+      roomsJsonStr = newWorldState.roomsJson || '[]';
+      px = 0; // The game-service places the start at 0,0
+      py = 0;
 
       // Update hero with initial position
       await updatePositionAsync({ heroId: 'default', x: px, y: py }, trace);
 
-      console.log(`[DndService] Initialized world via world-service`);
+      console.log(`[DndService] Initialized world via game-service`);
     }
 
-    // 4. Run render pipeline
+    // 4. Run render pipeline with hero's effective visibility
     const rendered = await buildAndRender(
       tilesJsonStr, roomsJsonStr,
       px, py,
-      call.request.visualRange,
+      visualRange,
       call.request.currentEnemiesJson,
       trace
     );
@@ -371,10 +374,12 @@ async function processInput(call, callback) {
   };
 
   try {
-    const { key, visualRange, currentEnemiesJson, level } = call.request;
+    const { key, currentEnemiesJson, level } = call.request;
 
-    // 1. Get hero position
+    // 1. Get hero position and effective stats (includes inventory bonuses)
     const hero = await getHeroAsync({ heroId: 'default' }, trace);
+    const effectiveStats = await getEffectiveStatsAsync({ heroId: 'default' }, trace);
+    const visualRange = effectiveStats.visibility || 6;
     let px = hero.positionX ?? 0;
     let py = hero.positionY ?? 0;
 
@@ -386,23 +391,17 @@ async function processInput(call, callback) {
     let tilesDict;
     try { tilesDict = JSON.parse(tilesJsonStr); } catch { tilesDict = {}; }
 
-    // 3. If world is empty, initialize
+    // 3. If world is empty, initialize via game-service
     if (Object.keys(tilesDict).length === 0) {
-      const roomRes = await generateRoomAsync({ level: level || 1 }, trace);
-      const initRes = await initWorldAsync({
-        width: roomRes.width,
-        height: roomRes.height,
-        description: roomRes.description,
-        tilesJson: roomRes.tilesJson,
-        doors: roomRes.doors || []
-      }, trace);
+      await startGameAsync({ level: level || 0 }, trace);
 
-      tilesJsonStr = initRes.tilesJson;
-      roomsJsonStr = initRes.roomsJson;
-      px = initRes.playerX;
-      py = initRes.playerY;
+      const initRes = await getWorldStateAsync({}, trace);
+      tilesJsonStr = initRes.tilesJson || '{}';
+      roomsJsonStr = initRes.roomsJson || '[]';
+      px = 0;
+      py = 0;
       await updatePositionAsync({ heroId: 'default', x: px, y: py }, trace);
-      console.log(`[DndService] Initialized world via ProcessInput`);
+      console.log(`[DndService] Initialized world via ProcessInput through game-service`);
     }
 
     // 4. Call input-service to validate the keypress
@@ -474,11 +473,11 @@ async function processInput(call, callback) {
       }
     }
 
-    // 7. Run render pipeline
+    // 7. Run render pipeline with hero's effective visibility
     const rendered = await buildAndRender(
       tilesJsonStr, roomsJsonStr,
       px, py,
-      visualRange || 8,
+      visualRange,
       currentEnemiesJson,
       trace
     );

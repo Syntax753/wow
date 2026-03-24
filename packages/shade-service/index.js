@@ -19,7 +19,7 @@ function computeVisibility(call, callback) {
 
   try {
     const { tilesJson, playerX: px, playerY: py, visualRange } = call.request;
-    const radius = visualRange > 0 ? visualRange : 8; // default to 8 if not specified
+    const radius = visualRange > 0 ? visualRange : 6; // default to 6 base visibility
 
     let tilesDict;
     try { tilesDict = JSON.parse(tilesJson || "{}"); } catch { tilesDict = {}; }

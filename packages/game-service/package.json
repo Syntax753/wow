@@ -1,0 +1,14 @@
+{
+  "name": "@wow/game-service",
+  "version": "1.0.0",
+  "description": "Game level initialization and state service",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.10.0",
+    "@wow/proto": "*"
+  }
+}
