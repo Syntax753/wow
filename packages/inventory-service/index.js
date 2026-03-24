@@ -1,5 +1,6 @@
-const { grpc, InventoryService } = require('@wow/proto');
+const { grpc, InventoryService, createLogger } = require('@wow/proto');
 
+const log = createLogger('InventoryService');
 const PORT = process.env.INVENTORY_SERVICE_PORT || '50054';
 
 // ── Body part enum — all canFit checks use these constants ───────────
@@ -190,7 +191,7 @@ function getInventory(call, callback) {
   if (!inventories[id]) {
     inventories[id] = defaultInventory(id);
   }
-  console.log(`[InventoryService] GetInventory: ${id} (${inventories[id].items.length} items)`);
+  log.debug(`GetInventory: ${id} (${inventories[id].items.length} items)`);
 
   callback(null, { ...serializeInventory(inventories[id]), trace });
 }
@@ -211,7 +212,7 @@ function addItem(call, callback) {
   }
 
   if (inventories[id].items.length >= inventories[id].capacity) {
-    console.log(`[InventoryService] AddItem: ${id} - inventory full`);
+    log.info(`AddItem: ${id} - inventory full`);
     callback(null, serializeInventory(inventories[id]));
     return;
   }
@@ -223,13 +224,13 @@ function addItem(call, callback) {
   });
 
   if (!newItem.canCarry) {
-    console.log(`[InventoryService] AddItem: ${id} - ${newItem.name} cannot be carried`);
+    log.info(`AddItem: ${id} - ${newItem.name} cannot be carried`);
     callback(null, { ...serializeInventory(inventories[id]), trace });
     return;
   }
 
   inventories[id].items.push(newItem);
-  console.log(`[InventoryService] AddItem: ${id} + ${newItem.name} (${newItem.weight}lbs, fits: [${newItem.canFit.join(', ')}])`);
+  log.info(`AddItem: ${id} + ${newItem.name} (${newItem.weight}lbs, fits: [${newItem.canFit.join(', ')}])`);
 
   callback(null, { ...serializeInventory(inventories[id]), trace });
 }
@@ -252,7 +253,7 @@ function dropItem(call, callback) {
   const idx = inventories[id].items.findIndex((i) => i.itemId === call.request.itemId);
   if (idx !== -1) {
     const dropped = inventories[id].items.splice(idx, 1)[0];
-    console.log(`[InventoryService] DropItem: ${id} - ${dropped.name}`);
+    log.info(`DropItem: ${id} - ${dropped.name}`);
   }
 
   callback(null, { ...serializeInventory(inventories[id]), trace });
@@ -294,7 +295,7 @@ function useItem(call, callback) {
     }
   }
 
-  console.log(`[InventoryService] UseItem: ${id} used ${item.name}`);
+  log.info(`UseItem: ${id} used ${item.name}`);
   callback(null, {
     success: true,
     message: `Used ${item.name}`,
@@ -330,7 +331,7 @@ function getStatBonuses(call, callback) {
     }
   }
 
-  console.log(`[InventoryService] GetStatBonuses: ${id} =>`, bonuses);
+  log.debug(`GetStatBonuses: ${id} =>`, bonuses);
   callback(null, { bonuses, trace });
 }
 
@@ -342,10 +343,10 @@ function main() {
     grpc.ServerCredentials.createInsecure(),
     (err, port) => {
       if (err) {
-        console.error('[InventoryService] Failed to start:', err);
+        log.error('Failed to start:', err);
         process.exit(1);
       }
-      console.log(`[InventoryService] Running on port ${port}`);
+      log.info(`Running on port ${port}`);
     }
   );
 }

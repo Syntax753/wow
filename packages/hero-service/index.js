@@ -1,5 +1,6 @@
-const { grpc, HeroService, InventoryService } = require('@wow/proto');
+const { grpc, HeroService, InventoryService, createLogger } = require('@wow/proto');
 
+const log = createLogger('HeroService');
 const PORT = process.env.HERO_SERVICE_PORT || '50053';
 const INVENTORY_URL = process.env.INVENTORY_SERVICE_URL || 'localhost:50054';
 
@@ -84,7 +85,7 @@ function updateStat(call, callback) {
   const field = statMap[statName.toUpperCase()];
   if (field && heroes[id][field] !== undefined) {
     heroes[id][field] = Math.max(1, heroes[id][field] + delta);
-    console.log(`[HeroService] UpdateStat: ${id} ${statName} ${delta > 0 ? '+' : ''}${delta} => ${heroes[id][field]}`);
+    log.debug(`UpdateStat: ${id} ${statName} ${delta > 0 ? '+' : ''}${delta} => ${heroes[id][field]}`);
   }
   callback(null, { ...heroes[id], trace });
 }
@@ -129,7 +130,7 @@ async function getEffectiveStats(call, callback) {
       const invResult = await inventoryCall('getStatBonuses', { heroId: id, trace: { traceId: trace.traceId, spanId: trace.spanId } });
       bonuses = invResult.bonuses || {};
     } catch (err) {
-      console.error('[HeroService] Could not reach inventory-service:', err.message);
+      log.error('Could not reach inventory-service:', err.message);
     }
 
     // Aggregate base stats + item bonuses
@@ -146,10 +147,10 @@ async function getEffectiveStats(call, callback) {
       trace
     };
 
-    console.log(`[HeroService] GetEffectiveStats: ${id} visibility=${effective.visibility} (base=${hero.visibility} + bonus=${bonuses.visibility || 0})`);
+    log.debug(`GetEffectiveStats: ${id} visibility=${effective.visibility} (base=${hero.visibility} + bonus=${bonuses.visibility || 0})`);
     callback(null, effective);
   } catch (err) {
-    console.error('[HeroService] Error getting effective stats:', err.message);
+    log.error('Error getting effective stats:', err.message);
     callback(err);
   }
 }
@@ -182,10 +183,10 @@ function main() {
     grpc.ServerCredentials.createInsecure(),
     (err, port) => {
       if (err) {
-        console.error('[HeroService] Failed to start:', err);
+        log.error('Failed to start:', err);
         process.exit(1);
       }
-      console.log(`[HeroService] Running on port ${port}`);
+      log.info(`Running on port ${port}`);
     }
   );
 }

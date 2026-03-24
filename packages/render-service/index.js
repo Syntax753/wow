@@ -1,5 +1,7 @@
 const grpc = require('@grpc/grpc-js');
-const { RenderService } = require('@wow/proto');
+const { RenderService, createLogger } = require('@wow/proto');
+
+const log = createLogger('RenderService');
 const crypto = require('crypto');
 
 const PORT = process.env.RENDER_PORT || 50058;
@@ -100,7 +102,7 @@ async function compositeLayers(call, callback) {
       mapGrid[pLocalY][pLocalX].revealed = true;
     }
 
-    console.log(`[RenderService] Compositing completed for viewport around ${playerX},${playerY}`);
+    log.debug(`Compositing completed for viewport around ${playerX},${playerY}`);
 
     callback(null, {
       mergedTilesJson: JSON.stringify(mapGrid),
@@ -108,7 +110,7 @@ async function compositeLayers(call, callback) {
       trace
     });
   } catch (err) {
-    console.error('[RenderService] Composition error:', err.message);
+    log.error('Composition error:', err.message);
     callback(err);
   }
 }
@@ -121,10 +123,10 @@ function main() {
     grpc.ServerCredentials.createInsecure(),
     (err, port) => {
       if (err) {
-        console.error('[RenderService] Failed to start:', err);
+        log.error('Failed to start:', err);
         process.exit(1);
       }
-      console.log(`[RenderService] Running on port ${port}`);
+      log.info(`Running on port ${port}`);
     }
   );
 }

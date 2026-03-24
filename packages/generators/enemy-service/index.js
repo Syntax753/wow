@@ -1,7 +1,8 @@
 const grpc = require('@grpc/grpc-js');
 const crypto = require('crypto');
-const { EnemyService, DiceService } = require('@wow/proto');
+const { EnemyService, DiceService, createLogger } = require('@wow/proto');
 
+const log = createLogger('EnemyService');
 const PORT = process.env.ENEMY_SERVICE_PORT || '50059';
 const DICE_SERVICE_URL = process.env.DICE_SERVICE_URL || 'localhost:50051';
 
@@ -70,7 +71,7 @@ async function generateEnemies(call, callback) {
     // Deterministic spawn check: 25% chance based on room coordinate hash
     const roomHash = (room.x * 73856093) ^ (room.y * 19349663);
     if (Math.abs(roomHash) % 4 !== 0) {
-      console.log(`[EnemyService] No encounter for room at ${room.x},${room.y} (hash miss)`);
+      log.debug(`No encounter for room at ${room.x},${room.y} (hash miss)`);
       callback(null, { enemies: [], trace });
       return;
     }
@@ -111,11 +112,11 @@ async function generateEnemies(call, callback) {
       maxHp
     }];
 
-    console.log(`[EnemyService] Generated ${type} for room at ${room.x},${room.y} (roll: ${roll})`);
+    log.info(`Generated ${type} for room at ${room.x},${room.y} (roll: ${roll})`);
 
     callback(null, { enemies, trace });
   } catch (err) {
-    console.error('[EnemyService] Error generating enemies:', err.message);
+    log.error('Error generating enemies:', err.message);
     callback(err);
   }
 }
@@ -222,7 +223,7 @@ async function processEnemies(call, callback) {
       trace
     });
   } catch (err) {
-    console.error('[EnemyService] Error processing enemies:', err.message);
+    log.error('Error processing enemies:', err.message);
     callback(err);
   }
 }
@@ -235,10 +236,10 @@ function main() {
     grpc.ServerCredentials.createInsecure(),
     (err, port) => {
       if (err) {
-        console.error('[EnemyService] Failed to start:', err);
+        log.error('Failed to start:', err);
         process.exit(1);
       }
-      console.log(`[EnemyService] Running on port ${port}`);
+      log.info(`Running on port ${port}`);
     }
   );
 }

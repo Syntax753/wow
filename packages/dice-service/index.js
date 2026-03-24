@@ -1,5 +1,6 @@
-const { grpc, DiceService } = require('@wow/proto');
+const { grpc, DiceService, createLogger } = require('@wow/proto');
 
+const log = createLogger('DiceService');
 const PORT = process.env.DICE_SERVICE_PORT || '50051';
 
 /**
@@ -47,7 +48,7 @@ function rollDice(call, callback) {
     };
   });
 
-  console.log(`[DiceService] Rolled: ${JSON.stringify(results)} => ${grandTotal}`);
+  log.debug(`Rolled: ${JSON.stringify(results)} => ${grandTotal}`);
 
   callback(null, {
     results,
@@ -64,10 +65,10 @@ function main() {
     grpc.ServerCredentials.createInsecure(),
     (err, port) => {
       if (err) {
-        console.error('[DiceService] Failed to start:', err);
+        log.error('Failed to start:', err);
         process.exit(1);
       }
-      console.log(`[DiceService] Running on port ${port}`);
+      log.info(`Running on port ${port}`);
     }
   );
 }

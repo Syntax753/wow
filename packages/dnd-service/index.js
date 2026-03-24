@@ -1,5 +1,7 @@
-const { grpc, DiceService, DndService, RoomService, RenderService, EnemyService, ShadeService, WorldService, HeroService, InputService, GameService } = require('@wow/proto');
+const { grpc, DiceService, DndService, RoomService, RenderService, EnemyService, ShadeService, WorldService, HeroService, InputService, GameService, createLogger } = require('@wow/proto');
 const crypto = require('crypto');
+
+const log = createLogger('DndService');
 
 const PORT = process.env.DND_SERVICE_PORT || '50052';
 const DICE_SERVICE_URL = process.env.DICE_SERVICE_URL || 'localhost:50051';
@@ -244,7 +246,7 @@ async function exploreDoor(call, callback) {
       return;
     }
 
-    console.log(`[DndService] Orchestrated ${structureType}: fit at ${placeRes.originX},${placeRes.originY}`);
+    log.info(`Orchestrated ${structureType}: fit at ${placeRes.originX},${placeRes.originY}`);
 
     // 4. Run render pipeline with updated world state
     const rendered = await buildAndRender(
@@ -271,7 +273,7 @@ async function exploreDoor(call, callback) {
       newRoomsJson: placeRes.roomsJson
     });
   } catch (err) {
-    console.error('[DndService] Error orchestrating door explore:', err.message);
+    log.error('Error orchestrating door explore:', err.message);
     callback(err);
   }
 }
@@ -330,7 +332,7 @@ async function computeMapModifiers(call, callback) {
       // Update hero with initial position
       await updatePositionAsync({ heroId: 'default', x: px, y: py }, trace);
 
-      console.log(`[DndService] Initialized world via game-service: ${gameRes.levelName || 'Level 0'}`);
+      log.info(`Initialized world via game-service: ${gameRes.levelName || 'Level 0'}`);
     }
 
     // 4. Run render pipeline with hero's effective visibility
@@ -357,7 +359,7 @@ async function computeMapModifiers(call, callback) {
 
     callback(null, responsePayload);
   } catch (err) {
-    console.error('[DndService] Error orchestrating map modifiers:', err.message);
+    log.error('Error orchestrating map modifiers:', err.message);
     callback(err);
   }
 }
@@ -403,7 +405,7 @@ async function processInput(call, callback) {
       px = 0;
       py = 0;
       await updatePositionAsync({ heroId: 'default', x: px, y: py }, trace);
-      console.log(`[DndService] Initialized world via ProcessInput: ${gameRes.levelName || 'Level 0'}`);
+      log.info(`Initialized world via ProcessInput: ${gameRes.levelName || 'Level 0'}`);
     }
 
     // 4. Fetch dynamic keymap
@@ -539,7 +541,7 @@ async function processInput(call, callback) {
         tilesJsonStr = placeRes.tilesJson;
         roomsJsonStr = placeRes.roomsJson;
         message = `${message} You discover a ${structureType}: ${description}`;
-        console.log(`[DndService] ProcessInput: explored ${structureType} at ${placeRes.originX},${placeRes.originY}`);
+        log.info(`ProcessInput: explored ${structureType} at ${placeRes.originX},${placeRes.originY}`);
       } else {
         message = 'The door opens to solid rock...';
       }
@@ -576,7 +578,7 @@ async function processInput(call, callback) {
       trace
     });
   } catch (err) {
-    console.error('[DndService] Error processing input:', err.message);
+    log.error('Error processing input:', err.message);
     callback(err);
   }
 }
@@ -593,10 +595,10 @@ function main() {
     grpc.ServerCredentials.createInsecure(),
     (err, port) => {
       if (err) {
-        console.error('[DndService] Failed to start:', err);
+        log.error('Failed to start:', err);
         process.exit(1);
       }
-      console.log(`[DndService] Running on port ${port}`);
+      log.info(`Running on port ${port}`);
     }
   );
 }

@@ -1,5 +1,7 @@
 const crypto = require('crypto');
-const { grpc, ActionService, GameService } = require('@wow/proto');
+const { grpc, ActionService, GameService, createLogger } = require('@wow/proto');
+
+const log = createLogger('ActionService');
 
 const GAME_SERVICE_URL = process.env.GAME_SERVICE_URL || 'localhost:50062';
 const gameClient = new GameService(GAME_SERVICE_URL, grpc.credentials.createInsecure());
@@ -126,7 +128,7 @@ async function getAvailableActions(call, callback) {
 
     callback(null, { overlay, trace });
   } catch (err) {
-    console.error('[ActionService] Error:', err.message);
+    log.error('Error:', err.message);
     callback(err);
   }
 }
@@ -139,10 +141,10 @@ function main() {
     grpc.ServerCredentials.createInsecure(),
     (err, port) => {
       if (err) {
-        console.error('[ActionService] Failed to start:', err);
+        log.error('Failed to start:', err);
         process.exit(1);
       }
-      console.log(`[ActionService] Running on port ${port}`);
+      log.info(`Running on port ${port}`);
     }
   );
 }

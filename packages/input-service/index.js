@@ -1,6 +1,7 @@
 const grpc = require('@grpc/grpc-js');
-const { InputService } = require('@wow/proto');
+const { InputService, createLogger } = require('@wow/proto');
 
+const log = createLogger('InputService');
 const PORT = process.env.INPUT_SERVICE_PORT || 50061;
 
 const TILE_WALL = '#';
@@ -191,7 +192,7 @@ function processInput(call, callback) {
     });
 
   } catch (err) {
-    console.error('[InputService] Error processing input:', err.message);
+    log.error('Error processing input:', err.message);
     callback(err);
   }
 }
@@ -204,10 +205,10 @@ function main() {
     grpc.ServerCredentials.createInsecure(),
     (err, port) => {
       if (err) {
-        console.error('[InputService] Failed to start:', err);
+        log.error('Failed to start:', err);
         process.exit(1);
       }
-      console.log(`[InputService] Running on port ${port}`);
+      log.info(`Running on port ${port}`);
     }
   );
 }

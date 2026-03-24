@@ -1,6 +1,7 @@
 const grpc = require('@grpc/grpc-js');
-const { RoomService, DiceService } = require('@wow/proto');
+const { RoomService, DiceService, createLogger } = require('@wow/proto');
 
+const log = createLogger('RoomService');
 const PORT = process.env.ROOM_PORT || 50056;
 
 const DICE_HOST = process.env.DICE_HOST || 'localhost:50051';
@@ -139,7 +140,7 @@ async function generateRoom(call, callback) {
     const descIndex = (descRoll.grandTotal - 1) % ROOM_DESCRIPTIONS.length;
     const description = ROOM_DESCRIPTIONS[descIndex];
 
-    console.log(`[RoomService] Generated room: ${width}x${height}, ${doors.length} doors`);
+    log.info(`Generated room: ${width}x${height}, ${doors.length} doors`);
 
     callback(null, {
       width,
@@ -150,7 +151,7 @@ async function generateRoom(call, callback) {
       trace
     });
   } catch (err) {
-    console.error('[RoomService] Error generating room:', err.message);
+    log.error('Error generating room:', err.message);
     callback(err);
   }
 }
@@ -212,7 +213,7 @@ async function generateCorridor(call, callback) {
     const descIndex = (descRoll.grandTotal - 1) % CORRIDOR_DESCRIPTIONS.length;
     const description = CORRIDOR_DESCRIPTIONS[descIndex];
 
-    console.log(`[RoomService] Generated corridor: ${length} tiles ${direction} (${w}x${h})`);
+    log.info(`Generated corridor: ${length} tiles ${direction} (${w}x${h})`);
 
     callback(null, {
       length,
@@ -222,7 +223,7 @@ async function generateCorridor(call, callback) {
       trace
     });
   } catch (err) {
-    console.error('[RoomService] Error generating corridor:', err.message);
+    log.error('Error generating corridor:', err.message);
     callback(err);
   }
 }
@@ -235,10 +236,10 @@ function main() {
     grpc.ServerCredentials.createInsecure(),
     (err, port) => {
       if (err) {
-        console.error('[RoomService] Failed to start:', err);
+        log.error('Failed to start:', err);
         process.exit(1);
       }
-      console.log(`[RoomService] Running on port ${port}`);
+      log.info(`Running on port ${port}`);
     }
   );
 }

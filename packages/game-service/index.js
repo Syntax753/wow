@@ -2,7 +2,9 @@ const grpc = require('@grpc/grpc-js');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { GameService, WorldService, RoomService, DiceService } = require('@wow/proto');
+const { GameService, WorldService, RoomService, DiceService, createLogger } = require('@wow/proto');
+
+const log = createLogger('GameService');
 
 const PORT = process.env.GAME_SERVICE_PORT || 50062;
 const WORLD_SERVICE_URL = process.env.WORLD_SERVICE_URL || 'localhost:50060';
@@ -16,34 +18,6 @@ const diceClient = new DiceService(DICE_SERVICE_URL, grpc.credentials.createInse
 const KEYMAP_PATH = path.join(__dirname, '../../data/keymap.json');
 const CAMPAIGNS_DIR = path.join(__dirname, '../../data/campaigns');
 const SETTINGS_PATH = path.join(__dirname, '../../data/settings.json');
-
-// Log level enum — all log level checks use these constants, never raw strings
-const LogLevel = Object.freeze({
-  ERROR: 'error',
-  WARN:  'warn',
-  INFO:  'info',
-  DEBUG: 'debug',
-});
-
-const LOG_LEVEL_VALUE = Object.freeze({
-  [LogLevel.ERROR]: 0,
-  [LogLevel.WARN]:  1,
-  [LogLevel.INFO]:  2,
-  [LogLevel.DEBUG]: 3,
-});
-
-function getLogLevel() {
-  return LOG_LEVEL_VALUE[settings.logLevel] ?? LOG_LEVEL_VALUE[LogLevel.INFO];
-}
-function logInfo(...args) {
-  if (getLogLevel() >= LOG_LEVEL_VALUE[LogLevel.INFO]) console.log(...args);
-}
-function logDebug(...args) {
-  if (getLogLevel() >= LOG_LEVEL_VALUE[LogLevel.DEBUG]) console.log(...args);
-}
-function logWarn(...args) {
-  if (getLogLevel() >= LOG_LEVEL_VALUE[LogLevel.WARN]) console.warn(...args);
-}
 
 // ── In-memory game state ─────────────────────────────────────────────
 let gameState = {
@@ -60,7 +34,7 @@ let settings = {
   musicVolume: 0.5,
   sfxVolume: 0.7,
   keymapOverrides: {},
-  logLevel: LogLevel.INFO,
+  logLevel: 'info',
 };
 
 // Load settings from disk on startup
@@ -69,14 +43,14 @@ try {
     settings = { ...settings, ...JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8')) };
   }
 } catch (err) {
-  console.warn('[GameService] Could not load settings, using defaults:', err.message);
+  log.warn('Could not load settings, using defaults:', err.message);
 }
 
 function saveSettingsToDisk() {
   try {
     fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
   } catch (err) {
-    console.error('[GameService] Could not save settings:', err.message);
+    log.error('Could not save settings:', err.message);
   }
 }
 
@@ -151,7 +125,7 @@ function getKeymap(call, callback) {
     const data = fs.readFileSync(KEYMAP_PATH, 'utf8');
     callback(null, { keymapJson: data, trace });
   } catch (err) {
-    console.error('[GameService] Error reading keymap:', err.message);
+    log.error('Error reading keymap:', err.message);
     callback(err);
   }
 }
@@ -173,7 +147,7 @@ function getCampaign(call, callback) {
     const campaign = loadCampaign(campId);
     callback(null, { campaignJson: JSON.stringify(campaign), trace });
   } catch (err) {
-    console.error('[GameService] Error reading campaign:', err.message);
+    log.error('Error reading campaign:', err.message);
     callback(err);
   }
 }
@@ -231,10 +205,10 @@ function updateSettings(call, callback) {
     const incoming = JSON.parse(call.request.settingsJson || '{}');
     settings = { ...settings, ...incoming };
     saveSettingsToDisk();
-    logInfo('[GameService] Settings updated:', settings);
+    log.info('Settings updated:', settings);
     callback(null, { success: true, settingsJson: JSON.stringify(settings), trace });
   } catch (err) {
-    console.error('[GameService] Error updating settings:', err.message);
+    log.error('Error updating settings:', err.message);
     callback(err);
   }
 }
@@ -337,10 +311,10 @@ function buildRoomGraph(numRooms) {
 
 // Print the level graph in a human-readable format (info level)
 function printGraph(graph, roomData) {
-  logInfo('');
-  logInfo('┌──────────────────────────────────────────────────────────');
-  logInfo('│ LEVEL GRAPH');
-  logInfo('├──────────────────────────────────────────────────────────');
+  log.info('');
+  log.info('┌──────────────────────────────────────────────────────────');
+  log.info('│ LEVEL GRAPH');
+  log.info('├──────────────────────────────────────────────────────────');
 
   for (const node of graph.nodes) {
     const neighbors = node.edges.map(n => `R${n}`).join(', ');
@@ -348,22 +322,22 @@ function printGraph(graph, roomData) {
     const dims = roomData && roomData[node.id]
       ? ` (${roomData[node.id].width}x${roomData[node.id].height})`
       : '';
-    logInfo(`│  R${node.id} [${node.doorCount} doors]${dims}${placed} → ${neighbors}`);
+    log.info(`│  R${node.id} [${node.doorCount} doors]${dims}${placed} → ${neighbors}`);
   }
 
-  logInfo('├──────────────────────────────────────────────────────────');
-  logInfo(`│ Rooms: ${graph.nodes.length}  Edges: ${graph.edges.length}`);
+  log.info('├──────────────────────────────────────────────────────────');
+  log.info(`│ Rooms: ${graph.nodes.length}  Edges: ${graph.edges.length}`);
 
   const dist = { 1: 0, 2: 0, 3: 0, '4+': 0 };
   for (const n of graph.nodes) {
     if (n.doorCount >= 4) dist['4+']++;
     else dist[n.doorCount]++;
   }
-  logInfo(`│ Distribution: 1-door=${dist[1]}  2-door=${dist[2]}  3-door=${dist[3]}  4+-door=${dist['4+']}`);
+  log.info(`│ Distribution: 1-door=${dist[1]}  2-door=${dist[2]}  3-door=${dist[3]}  4+-door=${dist['4+']}`);
 
-  logInfo('│ Edges: ' + graph.edges.map(([a, b]) => `R${a}↔R${b}`).join('  '));
-  logInfo('└──────────────────────────────────────────────────────────');
-  logInfo('');
+  log.info('│ Edges: ' + graph.edges.map(([a, b]) => `R${a}↔R${b}`).join('  '));
+  log.info('└──────────────────────────────────────────────────────────');
+  log.info('');
 }
 
 // ── RPC: StartGame ───────────────────────────────────────────────────
@@ -390,7 +364,7 @@ async function startGame(call, callback) {
     const campaign = loadCampaign(campaignId);
     const levelConfig = getLevelConfig(campaign, level);
 
-    logInfo(`[GameService] Starting campaign "${campaign.name}" level ${level}: "${levelConfig.name}"`);
+    log.info(`[GameService] Starting campaign "${campaign.name}" level ${level}: "${levelConfig.name}"`);
 
     // Update game state
     gameState = {
@@ -431,7 +405,7 @@ async function startGame(call, callback) {
     }
 
     // Print initial graph (before placement)
-    logInfo('[GameService] === GRAPH BUILT ===');
+    log.info('[GameService] === GRAPH BUILT ===');
     printGraph(graph, roomData);
 
     // 4. Place rooms using graph layout
@@ -446,7 +420,7 @@ async function startGame(call, callback) {
     room0.placed = true;
     room0.worldX = 0;
     room0.worldY = 0;
-    logInfo(`[GameService] Placed R0 (spawn) at (0,0) ${room0.width}x${room0.height}`);
+    log.info(`[GameService] Placed R0 (spawn) at (0,0) ${room0.width}x${room0.height}`);
 
     let roomsPlaced = 1;
     const halfX = (levelConfig.maxDimensionX || 100) / 2;
@@ -476,7 +450,7 @@ async function startGame(call, callback) {
       }
 
       if (roomData[unplacedId].placed) {
-        logDebug(`[GameService] Edge R${a}↔R${b}: both placed, adding corridor`);
+        log.debug(`[GameService] Edge R${a}↔R${b}: both placed, adding corridor`);
         await connectRoomsWithCorridor(roomData[placedId], roomData[unplacedId], difficulty, trace);
         continue;
       }
@@ -485,7 +459,7 @@ async function startGame(call, callback) {
       const newRoom = roomData[unplacedId];
       const placedDoorLocal = pickAvailableDoor(placedRoom);
       if (!placedDoorLocal) {
-        logDebug(`[GameService] Edge R${placedId}↔R${unplacedId}: no available door on R${placedId}, skipping`);
+        log.debug(`[GameService] Edge R${placedId}↔R${unplacedId}: no available door on R${placedId}, skipping`);
         continue;
       }
 
@@ -493,7 +467,7 @@ async function startGame(call, callback) {
       const anchorY = placedRoom.worldY + placedDoorLocal.y;
 
       if (Math.abs(anchorX) > halfX - 15 || Math.abs(anchorY) > halfY - 15) {
-        logDebug(`[GameService] Edge R${placedId}↔R${unplacedId}: out of bounds at (${anchorX},${anchorY})`);
+        log.debug(`[GameService] Edge R${placedId}↔R${unplacedId}: out of bounds at (${anchorX},${anchorY})`);
         continue;
       }
 
@@ -530,27 +504,30 @@ async function startGame(call, callback) {
           newRoom.worldX = placeRes.originX || anchorX;
           newRoom.worldY = placeRes.originY || anchorY;
           roomsPlaced++;
-          logDebug(`[GameService] Edge R${placedId}↔R${unplacedId}: placed R${unplacedId} directly at (${newRoom.worldX},${newRoom.worldY})`);
+          log.debug(`[GameService] Edge R${placedId}↔R${unplacedId}: placed R${unplacedId} directly at (${newRoom.worldX},${newRoom.worldY})`);
           enqueueEdgesForRoom(unplacedId, graph.edges, edgeQueue, processedEdges);
         } else {
-          logDebug(`[GameService] Edge R${placedId}↔R${unplacedId}: FAILED to place (corridor+room both blocked)`);
+          log.debug(`[GameService] Edge R${placedId}↔R${unplacedId}: FAILED to place (corridor+room both blocked)`);
         }
         continue;
       }
 
+      // Find the corridor's far end — the floor tile furthest from the anchor
       const corrTiles = JSON.parse(corrPlaceRes.tilesJson || '{}');
-      let corridorEndDoor = null;
+      let corridorEnd = null;
+      let maxDist = -1;
       for (const [coord, ch] of Object.entries(corrTiles)) {
-        if (ch === '+') {
+        if (ch === '.' || ch === '+') {
           const [cx, cy] = coord.split(',').map(Number);
-          if (!corridorEndDoor || Math.abs(cx - anchorX) + Math.abs(cy - anchorY) >
-              Math.abs(corridorEndDoor.x - anchorX) + Math.abs(corridorEndDoor.y - anchorY)) {
-            corridorEndDoor = { x: cx, y: cy };
+          const dist = Math.abs(cx - anchorX) + Math.abs(cy - anchorY);
+          if (dist > maxDist) {
+            maxDist = dist;
+            corridorEnd = { x: cx, y: cy };
           }
         }
       }
 
-      if (corridorEndDoor) {
+      if (corridorEnd) {
         const placeRes = await placeStructureAsync({
           structureType: 'room',
           width: newRoom.width,
@@ -558,32 +535,32 @@ async function startGame(call, callback) {
           description: newRoom.description,
           tilesJson: newRoom.tilesJson,
           doors: newRoom.doors,
-          anchorX: corridorEndDoor.x,
-          anchorY: corridorEndDoor.y,
+          anchorX: corridorEnd.x,
+          anchorY: corridorEnd.y,
           direction: ''
         }, trace);
 
         if (placeRes.fitSuccess) {
           newRoom.placed = true;
-          newRoom.worldX = placeRes.originX || corridorEndDoor.x;
-          newRoom.worldY = placeRes.originY || corridorEndDoor.y;
+          newRoom.worldX = placeRes.originX || corridorEnd.x;
+          newRoom.worldY = placeRes.originY || corridorEnd.y;
           roomsPlaced++;
-          logDebug(`[GameService] Edge R${placedId}↔R${unplacedId}: placed R${unplacedId} via corridor at (${newRoom.worldX},${newRoom.worldY})`);
+          log.debug(`[GameService] Edge R${placedId}↔R${unplacedId}: placed R${unplacedId} via corridor at (${newRoom.worldX},${newRoom.worldY})`);
           enqueueEdgesForRoom(unplacedId, graph.edges, edgeQueue, processedEdges);
         } else {
-          logDebug(`[GameService] Edge R${placedId}↔R${unplacedId}: corridor placed but R${unplacedId} didn't fit`);
+          log.debug(`[GameService] Edge R${placedId}↔R${unplacedId}: corridor placed but R${unplacedId} didn't fit`);
         }
       }
     }
 
     // Print final placement results
-    logInfo('[GameService] === PLACEMENT RESULTS ===');
+    log.info('[GameService] === PLACEMENT RESULTS ===');
     printGraph(graph, roomData);
     for (const rd of roomData) {
       const status = rd.placed ? `placed at (${rd.worldX},${rd.worldY})` : 'NOT PLACED';
-      logInfo(`[GameService]   R${rd.id}: ${rd.width}x${rd.height}, ${rd.doors.length} doors — ${status}`);
+      log.info(`[GameService]   R${rd.id}: ${rd.width}x${rd.height}, ${rd.doors.length} doors — ${status}`);
     }
-    logInfo(`[GameService] Map generation complete. Rooms placed: ${roomsPlaced}/${numRooms}, Attempts: ${placementAttempts}`);
+    log.info(`[GameService] Map generation complete. Rooms placed: ${roomsPlaced}/${numRooms}, Attempts: ${placementAttempts}`);
 
     callback(null, {
       success: true,
@@ -593,7 +570,7 @@ async function startGame(call, callback) {
       trace
     });
   } catch (err) {
-    console.error('[GameService] Error starting game:', err.message);
+    log.error('Error starting game:', err.message);
     callback(err);
   }
 }
@@ -666,10 +643,10 @@ function main() {
     grpc.ServerCredentials.createInsecure(),
     (err, port) => {
       if (err) {
-        console.error('[GameService] Failed to start:', err);
+        log.error('Failed to start:', err);
         process.exit(1);
       }
-      console.log(`[GameService] Running on port ${port}`);
+      log.info(`Running on port ${port}`);
     }
   );
 }

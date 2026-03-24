@@ -1,6 +1,7 @@
 const grpc = require('@grpc/grpc-js');
-const { WorldService } = require('@wow/proto');
+const { WorldService, createLogger } = require('@wow/proto');
 
+const log = createLogger('WorldService');
 const PORT = process.env.WORLD_SERVICE_PORT || 50060;
 
 // ── Authoritative world state (in-memory) ──────────────────────────────
@@ -204,9 +205,9 @@ function placeStructure(call, callback) {
         }
         // Convert anchor door to floor (door has been opened)
         worldTiles[`${anchorX},${anchorY}`] = '.';
-        console.log(`[WorldService] Corridor placed: ${actualW}x${actualH} ${dir} at ${rx},${ry}`);
+        log.info(`Corridor placed: ${actualW}x${actualH} ${dir} at ${rx},${ry}`);
       } else {
-        console.log(`[WorldService] Corridor placement failed at anchor ${anchorX},${anchorY}`);
+        log.info(`Corridor placement failed at anchor ${anchorX},${anchorY}`);
       }
     } else {
       // Room placement — try up to 5 positions
@@ -232,13 +233,13 @@ function placeStructure(call, callback) {
           // Convert anchor door to floor (door has been opened)
           worldTiles[`${anchorX},${anchorY}`] = '.';
           worldRooms.push({ x: rx, y: ry, width, height, description });
-          console.log(`[WorldService] Room placed: ${width}x${height} at ${rx},${ry}`);
+          log.info(`Room placed: ${width}x${height} at ${rx},${ry}`);
           break;
         }
       }
 
       if (!fitSuccess) {
-        console.log(`[WorldService] Room placement failed after 5 attempts at anchor ${anchorX},${anchorY}`);
+        log.info(`Room placement failed after 5 attempts at anchor ${anchorX},${anchorY}`);
       }
     }
 
@@ -251,7 +252,7 @@ function placeStructure(call, callback) {
       trace
     });
   } catch (err) {
-    console.error('[WorldService] Error placing structure:', err.message);
+    log.error('Error placing structure:', err.message);
     callback(err);
   }
 }
@@ -298,7 +299,7 @@ function revealTiles(call, callback) {
       trace
     });
   } catch (err) {
-    console.error('[WorldService] Error revealing tiles:', err.message);
+    log.error('Error revealing tiles:', err.message);
     callback(err);
   }
 }
@@ -348,7 +349,7 @@ function initWorld(call, callback) {
     const playerX = 0;
     const playerY = 0;
 
-    console.log(`[WorldService] World initialized: ${width}x${height} room at ${rx},${ry}, player at ${playerX},${playerY}`);
+    log.info(`World initialized: ${width}x${height} room at ${rx},${ry}, player at ${playerX},${playerY}`);
 
     callback(null, {
       tilesJson: JSON.stringify(worldTiles),
@@ -358,7 +359,7 @@ function initWorld(call, callback) {
       trace
     });
   } catch (err) {
-    console.error('[WorldService] Error initializing world:', err.message);
+    log.error('Error initializing world:', err.message);
     callback(err);
   }
 }
@@ -377,7 +378,7 @@ function resetWorld(call, callback) {
   worldTiles = {};
   worldRooms = [];
   revealedTiles = new Set();
-  console.log('[WorldService] World state reset');
+  log.info('World state reset');
 
   callback(null, { success: true, trace });
 }
@@ -396,7 +397,7 @@ function setTile(call, callback) {
 
   const { x, y, tileChar } = call.request;
   worldTiles[`${x},${y}`] = tileChar;
-  console.log(`[WorldService] SetTile: (${x},${y}) = '${tileChar}'`);
+  log.debug(`SetTile: (${x},${y}) = '${tileChar}'`);
 
   callback(null, {
     success: true,
@@ -422,10 +423,10 @@ function main() {
     grpc.ServerCredentials.createInsecure(),
     (err, port) => {
       if (err) {
-        console.error('[WorldService] Failed to start:', err);
+        log.error('Failed to start:', err);
         process.exit(1);
       }
-      console.log(`[WorldService] Running on port ${port}`);
+      log.info(`Running on port ${port}`);
     }
   );
 }

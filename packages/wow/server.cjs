@@ -7,7 +7,9 @@ const http = require('http');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { grpc, DiceService, DndService, HeroService, InventoryService, ActionService, WorldService, GameService } = require('@wow/proto');
+const { grpc, DiceService, DndService, HeroService, InventoryService, ActionService, WorldService, GameService, createLogger } = require('@wow/proto');
+
+const log = createLogger('WoW API');
 
 const API_PORT = process.env.PORT || process.env.API_PORT || 3001;
 const DICE_URL = process.env.DICE_SERVICE_URL || 'localhost:50051';
@@ -413,7 +415,7 @@ const server = http.createServer(async (req, res) => {
       json(res, 404, envelope(null, [logEntry('Unknown API endpoint', 'system')], rootSpan));
     }
   } catch (err) {
-    console.error('[WoW API] Error:', err.message);
+    log.error('Error:', err.message);
     rootSpan.timeEnd = Date.now();
     rootSpan.dataRet = JSON.stringify({ error: err.message });
     json(res, 500, envelope(null, [logEntry(`Error: ${err.message}`, 'combat', 'system')], rootSpan));
@@ -421,6 +423,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(API_PORT, () => {
-  console.log(`[WoW API] Running on port ${API_PORT}`);
-  console.log(`[WoW API] Services: dice(${DICE_URL}) dnd(${DND_URL}) hero(${HERO_URL}) inventory(${INVENTORY_URL}) action(${ACTION_URL}) world(${WORLD_URL})`);
+  log.info(`Running on port ${API_PORT}`);
+  log.info(`Services: dice(${DICE_URL}) dnd(${DND_URL}) hero(${HERO_URL}) inventory(${INVENTORY_URL}) action(${ACTION_URL}) world(${WORLD_URL})`);
 });

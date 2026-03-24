@@ -1,6 +1,7 @@
 const path = require('path');
 const grpc = require('@grpc/grpc-js');
 const protoLoader = require('@grpc/proto-loader');
+const { createLogger, LogLevel } = require('./logger');
 
 const PROTO_DIR = __dirname;
 
@@ -57,4 +58,6 @@ module.exports = {
   WorldService: worldProto.world.WorldService,
   InputService: inputProto.input.InputService,
   GameService: gameProto.game.GameService,
+  createLogger,
+  LogLevel,
 };

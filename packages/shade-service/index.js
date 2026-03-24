@@ -1,6 +1,7 @@
 const grpc = require('@grpc/grpc-js');
-const { ShadeService } = require('@wow/proto');
+const { ShadeService, createLogger } = require('@wow/proto');
 
+const log = createLogger('ShadeService');
 const PORT = process.env.SHADE_PORT || 50057;
 
 function computeVisibility(call, callback) {
@@ -84,7 +85,7 @@ function computeVisibility(call, callback) {
 
     // Stringify the array of coordinate strings
     const visibleCoordsJson = JSON.stringify([...visible]);
-    console.log(`[ShadeService] Computed FOV at (${px},${py}), ${visible.size} tiles visible`);
+    log.debug(`Computed FOV at (${px},${py}), ${visible.size} tiles visible`);
 
     callback(null, {
       layerType: 10,
@@ -92,7 +93,7 @@ function computeVisibility(call, callback) {
       trace
     });
   } catch (err) {
-    console.error('[ShadeService] Raycast computational error:', err.message);
+    log.error('Raycast computational error:', err.message);
     callback(err);
   }
 }
@@ -105,10 +106,10 @@ function main() {
     grpc.ServerCredentials.createInsecure(),
     (err, port) => {
       if (err) {
-        console.error('[ShadeService] Failed to start:', err);
+        log.error('Failed to start:', err);
         process.exit(1);
       }
-      console.log(`[ShadeService] Running on port ${port}`);
+      log.info(`Running on port ${port}`);
     }
   );
 }
