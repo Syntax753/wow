@@ -9,11 +9,11 @@
 
 set -euo pipefail
 
-PROJECT_ID="wow-now-491200"
+PROJECT_ID="world-of-worlds-491214"
 REGION="us-central1"
 REPO_NAME="wow-repo"
 SERVICE_ACCOUNT_NAME="github-deploy"
-GITHUB_REPO="OWNER/REPO"  # <-- CHANGE THIS to your GitHub org/user and repo name
+GITHUB_REPO="syntax753/wow"  # <-- CHANGE THIS to your GitHub org/user and repo name
 
 echo "==> Setting project"
 gcloud config set project "$PROJECT_ID"

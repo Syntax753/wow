@@ -9,7 +9,12 @@
       "Bash(node:*)",
       "Bash(curl:*)",
       "Bash(node -e \":*)",
-      "Bash(node -e \"require\\(''''./packages/game-service/index.js''''\\)\")"
+      "Bash(node -e \"require\\(''''./packages/game-service/index.js''''\\)\")",
+      "Bash(where.exe gcloud:*)",
+      "Bash(cmd.exe /c \"where gcloud\")",
+      "Bash(export PATH=\"$PATH:/c/Users/synt_/AppData/Local/Google/Cloud SDK/google-cloud-sdk/bin\")",
+      "Bash(bash /c/Users/synt_/dev/wow/scripts/gcp-setup.sh)",
+      "Bash(powershell -ExecutionPolicy Bypass -File \"C:/Users/synt_/dev/wow/scripts/gcp-setup.ps1\")"
     ]
   }
 }

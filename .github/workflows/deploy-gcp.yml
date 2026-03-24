@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  PROJECT_ID: wow-now-491200
+  PROJECT_ID: world-of-worlds-491214
   REGION: us-central1
   SERVICE: wow-monorepo
   REPOSITORY: wow-repo
