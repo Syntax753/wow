@@ -41,7 +41,7 @@ function App() {
 
   const [defaultKeymap, setDefaultKeymap] = useState<Record<string, any>>({})
   const [keymap, setKeymap] = useState<Record<string, any>>({})
-  const [campaigns, setCampaigns] = useState<any[]>([])
+  const [, setCampaigns] = useState<any[]>([])
   const [levelName, setLevelName] = useState<string>('')
   const [showInventory, setShowInventory] = useState(false)
   const [inventory, setInventory] = useState<InventoryState | null>(null)

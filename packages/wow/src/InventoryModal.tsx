@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { getInventory, type Item } from './api'
 
 // Equipment slot definitions with body positions
@@ -46,8 +46,8 @@ const BODY_ART = `
 export default function InventoryModal({ onClose }: Props) {
   const [backpack, setBackpack] = useState<Item[]>([])
   const [equipped, setEquipped] = useState<Record<SlotId, Item | null>>({
-    helmet: null, necklace: null, chest: null, gloves: null,
-    weapon: null, leggings: null, boots: null, ring: null, shield: null,
+    head: null, neck: null, chest: null, right_hand: null,
+    left_hand: null, legs: null, feet: null, finger: null,
   })
   const [dragItem, setDragItem] = useState<{ item: Item; source: 'backpack' | SlotId } | null>(null)
   const [hoverSlot, setHoverSlot] = useState<string | null>(null)
@@ -76,14 +76,6 @@ export default function InventoryModal({ onClose }: Props) {
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
   }, [onClose])
-
-  const canEquipInSlot = useCallback((item: Item, slotId: SlotId): boolean => {
-    const slot = EQUIPMENT_SLOTS.find(s => s.id === slotId)
-    if (!slot) return false
-    // Item must declare this body part in canFit
-    if (!item.canFit || item.canFit.length === 0) return false
-    return item.canFit.includes(slot.bodyPart)
-  }, [])
 
   // Drag handlers
   const onDragStartBackpack = (e: React.DragEvent, item: Item) => {

@@ -271,7 +271,7 @@ function getReverseDoorPosition(
   }
 }
 
-export function renderMap(tiles: Record<string, string>): string {
+export function renderMap(_tiles: Record<string, string>): string {
   // Infinite map representation isn't meaningful to serialize explicitly, return empty
   return '';
 }
