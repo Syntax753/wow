@@ -26,6 +26,7 @@ let gameState = {
   levelName: '',
   totalLevels: 0,
   started: false,
+  spawnPositions: [], // [{x, y}] per player spawn room
 };
 
 // ── Settings (persisted to disk) ─────────────────────────────────────
@@ -170,7 +171,8 @@ function getGameState(call, callback) {
     levelName: gameState.levelName,
     totalLevels: gameState.totalLevels,
     settingsJson: JSON.stringify(settings),
-    trace
+    trace,
+    spawnPositionsJson: JSON.stringify(gameState.spawnPositions || []),
   });
 }
 
@@ -378,11 +380,18 @@ async function startGame(call, callback) {
     // 1. Reset World
     await resetWorldAsync({}, trace);
 
-    const numRooms = levelConfig.maxRooms || 10;
+    const maxPlayers = call.request.maxPlayers || 4;
+    const numRooms = Math.max(levelConfig.maxRooms || 10, maxPlayers); // at least 1 room per player
     const difficulty = levelConfig.difficulty || (level + 1);
 
     // 2. Build room graph (doors == edges for every node)
+    // First maxPlayers rooms are spawn rooms (one per potential player)
     const graph = buildRoomGraph(numRooms);
+
+    // Ensure spawn rooms (first maxPlayers nodes) have at least 2 doors for connectivity
+    for (let i = 0; i < Math.min(maxPlayers, graph.nodes.length); i++) {
+      if (graph.nodes[i].doorCount < 2) graph.nodes[i].doorCount = 2;
+    }
 
     // 3. Generate all rooms via room-service with exact door counts
     const roomData = [];
@@ -512,19 +521,19 @@ async function startGame(call, callback) {
         continue;
       }
 
-      // Find the corridor's far end — the floor tile furthest from the anchor
-      const corrTiles = JSON.parse(corrPlaceRes.tilesJson || '{}');
+      // Compute the corridor's far end from direction + length (no tile scanning)
+      const actualDir = corrPlaceRes.actualDirection || corrRes.direction;
+      const corrLength = Math.max(corrWidth, corrHeight);
       let corridorEnd = null;
-      let maxDist = -1;
-      for (const [coord, ch] of Object.entries(corrTiles)) {
-        if (ch === '.' || ch === '+') {
-          const [cx, cy] = coord.split(',').map(Number);
-          const dist = Math.abs(cx - anchorX) + Math.abs(cy - anchorY);
-          if (dist > maxDist) {
-            maxDist = dist;
-            corridorEnd = { x: cx, y: cy };
-          }
-        }
+
+      if (actualDir === 'N') {
+        corridorEnd = { x: anchorX, y: anchorY - (corrLength - 1) };
+      } else if (actualDir === 'S') {
+        corridorEnd = { x: anchorX, y: anchorY + (corrLength - 1) };
+      } else if (actualDir === 'E') {
+        corridorEnd = { x: anchorX + (corrLength - 1), y: anchorY };
+      } else if (actualDir === 'W') {
+        corridorEnd = { x: anchorX - (corrLength - 1), y: anchorY };
       }
 
       if (corridorEnd) {
@@ -553,6 +562,24 @@ async function startGame(call, callback) {
       }
     }
 
+    // Build spawn positions from the first maxPlayers placed rooms
+    const spawnPositions = [];
+    for (let i = 0; i < Math.min(maxPlayers, roomData.length); i++) {
+      const rd = roomData[i];
+      if (rd.placed) {
+        // Spawn at the center of the room
+        const cx = rd.worldX + Math.floor(rd.width / 2);
+        const cy = rd.worldY + Math.floor(rd.height / 2);
+        spawnPositions.push({ x: cx, y: cy });
+      }
+    }
+    // Fallback: if fewer rooms placed than maxPlayers, fill with (0,0)
+    while (spawnPositions.length < maxPlayers) {
+      spawnPositions.push({ x: 0, y: 0 });
+    }
+
+    gameState.spawnPositions = spawnPositions;
+
     // Print final placement results
     log.info('[GameService] === PLACEMENT RESULTS ===');
     printGraph(graph, roomData);
@@ -560,6 +587,7 @@ async function startGame(call, callback) {
       const status = rd.placed ? `placed at (${rd.worldX},${rd.worldY})` : 'NOT PLACED';
       log.info(`[GameService]   R${rd.id}: ${rd.width}x${rd.height}, ${rd.doors.length} doors — ${status}`);
     }
+    log.info(`[GameService] Spawn positions: ${JSON.stringify(spawnPositions)}`);
     log.info(`[GameService] Map generation complete. Rooms placed: ${roomsPlaced}/${numRooms}, Attempts: ${placementAttempts}`);
 
     callback(null, {
@@ -567,7 +595,8 @@ async function startGame(call, callback) {
       levelName: levelConfig.name || `Level ${level}`,
       levelDescription: levelConfig.description || '',
       currentLevel: level,
-      trace
+      trace,
+      spawnPositionsJson: JSON.stringify(spawnPositions),
     });
   } catch (err) {
     log.error('Error starting game:', err.message);
@@ -602,7 +631,7 @@ function enqueueEdgesForRoom(roomId, allEdges, queue, processedEdges) {
   }
 }
 
-// Connect two already-placed rooms with a corridor between their closest doors
+// Connect two already-placed rooms with corridors from both doors growing toward each other
 async function connectRoomsWithCorridor(roomA, roomB, difficulty, trace) {
   const doorA = pickAvailableDoor(roomA);
   const doorB = pickAvailableDoor(roomB);
@@ -610,19 +639,35 @@ async function connectRoomsWithCorridor(roomA, roomB, difficulty, trace) {
 
   const ax = roomA.worldX + doorA.x;
   const ay = roomA.worldY + doorA.y;
+  const bx = roomB.worldX + doorB.x;
+  const by = roomB.worldY + doorB.y;
 
-  const corrRes = await generateCorridorAsync({ level: difficulty }, trace);
-  const isVertical = corrRes.direction === 'N' || corrRes.direction === 'S';
-
+  // Place corridor from door A (direction forced by world-service away from room A)
+  const corrResA = await generateCorridorAsync({ level: difficulty }, trace);
+  const isVertA = corrResA.direction === 'N' || corrResA.direction === 'S';
   await placeStructureAsync({
     structureType: 'corridor',
-    width: isVertical ? 3 : corrRes.length,
-    height: isVertical ? corrRes.length : 3,
-    description: corrRes.description,
-    tilesJson: corrRes.tilesJson || '{}',
+    width: isVertA ? 3 : corrResA.length,
+    height: isVertA ? corrResA.length : 3,
+    description: corrResA.description,
+    tilesJson: corrResA.tilesJson || '{}',
     doors: [],
     anchorX: ax, anchorY: ay,
-    direction: corrRes.direction
+    direction: corrResA.direction
+  }, trace);
+
+  // Place corridor from door B (direction forced away from room B, toward A)
+  const corrResB = await generateCorridorAsync({ level: difficulty }, trace);
+  const isVertB = corrResB.direction === 'N' || corrResB.direction === 'S';
+  await placeStructureAsync({
+    structureType: 'corridor',
+    width: isVertB ? 3 : corrResB.length,
+    height: isVertB ? corrResB.length : 3,
+    description: corrResB.description,
+    tilesJson: corrResB.tilesJson || '{}',
+    doors: [],
+    anchorX: bx, anchorY: by,
+    direction: corrResB.direction
   }, trace);
 }
 

@@ -16,6 +16,7 @@ message ProcessInputRequest {
   string current_enemies_json = 3;
   int32 level = 4;
   TraceInfo trace = 5;
+  string hero_id = 6;
 }
 
 message ProcessInputResponse {
@@ -52,6 +53,7 @@ message ComputeMapModifiersRequest {
   int32 visual_range = 4;
   string current_enemies_json = 5;
   TraceInfo trace = 7;
+  string hero_id = 8;
 }
 
 message ComputeMapModifiersResponse {
@@ -73,6 +75,7 @@ message ExploreDoorRequest {
   int32 player_y = 9;
   int32 visual_range = 10;
   string current_enemies_json = 11;
+  string hero_id = 12;
 }
 
 message ExploreDoorResponse {

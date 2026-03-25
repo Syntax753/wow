@@ -106,7 +106,7 @@ const getKeymapAsync = makeAsyncCall(gameClient, 'GetKeymap', 'game-service');
 const getGameStateAsync = makeAsyncCall(gameClient, 'GetGameState', 'game-service');
 
 // ── Helper: build layers from world tiles and run render pipeline ──────
-async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, currentEnemiesJson, trace) {
+async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, currentEnemiesJson, trace, playerId) {
   let tilesDict;
   try { tilesDict = JSON.parse(tilesJsonStr || '{}'); } catch { tilesDict = {}; }
 
@@ -146,9 +146,10 @@ async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, c
 
   const layer10 = { layerType: 10, tilesJson: shadeResponse.tilesJson };
 
-  // Persist visible tiles into world-service's revealed set
+  // Persist visible tiles into world-service's revealed set (per-player)
   const revealResponse = await revealTilesAsync({
-    visibleCoordsJson: shadeResponse.tilesJson
+    visibleCoordsJson: shadeResponse.tilesJson,
+    playerId: playerId || 'default'
   }, trace);
 
   // Revealed layer (all tiles ever seen)
@@ -180,7 +181,8 @@ async function exploreDoor(call, callback) {
 
   try {
     // 1. Get hero effective stats for visibility
-    const effectiveStats = await getEffectiveStatsAsync({ heroId: 'default' }, trace);
+    const heroId = call.request.heroId || 'default';
+    const effectiveStats = await getEffectiveStatsAsync({ heroId }, trace);
     const visualRange = effectiveStats.visibility || 6;
 
     // 2. Roll 1d20 to determine Room vs Corridor
@@ -254,7 +256,7 @@ async function exploreDoor(call, callback) {
       px, py,
       visualRange,
       call.request.currentEnemiesJson,
-      trace
+      trace, heroId
     );
 
     callback(null, {
@@ -296,19 +298,20 @@ async function computeMapModifiers(call, callback) {
     let isInit = false;
 
     // 1. Get hero position and effective stats
-    const hero = await getHeroAsync({ heroId: 'default' }, trace);
-    const effectiveStats = await getEffectiveStatsAsync({ heroId: 'default' }, trace);
+    const heroId = call.request.heroId || 'default';
+    const hero = await getHeroAsync({ heroId }, trace);
+    const effectiveStats = await getEffectiveStatsAsync({ heroId }, trace);
     const visualRange = effectiveStats.visibility || 6;
     let px = call.request.playerX ?? hero.positionX ?? 0;
     let py = call.request.playerY ?? hero.positionY ?? 0;
 
     // Update hero position from frontend (frontend tracks movement)
     if (call.request.playerX !== undefined) {
-      await updatePositionAsync({ heroId: 'default', x: px, y: py }, trace);
+      await updatePositionAsync({ heroId, x: px, y: py }, trace);
     }
 
     // 2. Get current world state from world-service
-    const worldState = await getWorldStateAsync({}, trace);
+    const worldState = await getWorldStateAsync({ playerId: heroId }, trace);
     let tilesJsonStr = worldState.tilesJson || '{}';
     let roomsJsonStr = worldState.roomsJson || '[]';
 
@@ -323,14 +326,14 @@ async function computeMapModifiers(call, callback) {
       const gameRes = await startGameAsync({ level: 0, campaignId: 'default' }, trace);
 
       // Now fetch the populated world state
-      const newWorldState = await getWorldStateAsync({}, trace);
+      const newWorldState = await getWorldStateAsync({ playerId: heroId }, trace);
       tilesJsonStr = newWorldState.tilesJson || '{}';
       roomsJsonStr = newWorldState.roomsJson || '[]';
       px = 0; // The game-service places the start at 0,0
       py = 0;
 
       // Update hero with initial position
-      await updatePositionAsync({ heroId: 'default', x: px, y: py }, trace);
+      await updatePositionAsync({ heroId, x: px, y: py }, trace);
 
       log.info(`Initialized world via game-service: ${gameRes.levelName || 'Level 0'}`);
     }
@@ -341,7 +344,7 @@ async function computeMapModifiers(call, callback) {
       px, py,
       visualRange,
       call.request.currentEnemiesJson,
-      trace
+      trace, heroId
     );
 
     const responsePayload = {
@@ -379,16 +382,17 @@ async function processInput(call, callback) {
 
   try {
     const { key, currentEnemiesJson, level } = call.request;
+    const heroId = call.request.heroId || 'default';
 
     // 1. Get hero position and effective stats (includes inventory bonuses)
-    const hero = await getHeroAsync({ heroId: 'default' }, trace);
-    const effectiveStats = await getEffectiveStatsAsync({ heroId: 'default' }, trace);
+    const hero = await getHeroAsync({ heroId }, trace);
+    const effectiveStats = await getEffectiveStatsAsync({ heroId }, trace);
     const visualRange = effectiveStats.visibility || 6;
     let px = hero.positionX ?? 0;
     let py = hero.positionY ?? 0;
 
     // 2. Get world state
-    const worldState = await getWorldStateAsync({}, trace);
+    const worldState = await getWorldStateAsync({ playerId: heroId }, trace);
     let tilesJsonStr = worldState.tilesJson || '{}';
     let roomsJsonStr = worldState.roomsJson || '[]';
 
@@ -399,12 +403,12 @@ async function processInput(call, callback) {
     if (Object.keys(tilesDict).length === 0) {
       const gameRes = await startGameAsync({ level: level || 0, campaignId: 'default' }, trace);
 
-      const initRes = await getWorldStateAsync({}, trace);
+      const initRes = await getWorldStateAsync({ playerId: heroId }, trace);
       tilesJsonStr = initRes.tilesJson || '{}';
       roomsJsonStr = initRes.roomsJson || '[]';
       px = 0;
       py = 0;
-      await updatePositionAsync({ heroId: 'default', x: px, y: py }, trace);
+      await updatePositionAsync({ heroId, x: px, y: py }, trace);
       log.info(`Initialized world via ProcessInput: ${gameRes.levelName || 'Level 0'}`);
     }
 
@@ -491,7 +495,7 @@ async function processInput(call, callback) {
     if (inputResult.positionChanged) {
       px = inputResult.newX;
       py = inputResult.newY;
-      await updatePositionAsync({ heroId: 'default', x: px, y: py }, trace);
+      await updatePositionAsync({ heroId, x: px, y: py }, trace);
     }
 
     // 6. If open_door, convert door to floor and run explore flow
@@ -563,7 +567,7 @@ async function processInput(call, callback) {
       px, py,
       visualRange,
       currentEnemiesJson,
-      trace
+      trace, heroId
     );
 
     callback(null, {

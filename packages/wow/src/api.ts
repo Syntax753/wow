@@ -3,6 +3,12 @@
 
 const API_BASE = '/api';
 
+// ── Player identity ───────────────────────────────────────────────────
+let currentPlayerId: string | null = null;
+
+export function setPlayerId(id: string | null) { currentPlayerId = id; }
+export function getPlayerId(): string | null { return currentPlayerId; }
+
 // === Standard Envelope ===
 export interface LogEntry {
   text: string;
@@ -231,9 +237,11 @@ function logTrace(trace: any, parentName = 'wow') {
 }
 
 async function post<T>(url: string, body: object = {}): Promise<ApiResponse<T>> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (currentPlayerId) headers['X-Player-Id'] = currentPlayerId;
   const res = await fetch(`${API_BASE}${url}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`API error: ${res.status}`);
@@ -244,7 +252,9 @@ async function post<T>(url: string, body: object = {}): Promise<ApiResponse<T>> 
 }
 
 async function get<T>(url: string): Promise<ApiResponse<T>> {
-  const res = await fetch(`${API_BASE}${url}`);
+  const headers: Record<string, string> = {};
+  if (currentPlayerId) headers['X-Player-Id'] = currentPlayerId;
+  const res = await fetch(`${API_BASE}${url}`, { headers });
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   const jsonData = await res.json();
   if (jsonData.trace) logTrace(jsonData.trace);
@@ -315,6 +325,18 @@ export const updateSettings = (settings: Record<string, any>) =>
   post<SettingsResponse>('/settings', settings);
 export const startNewAdventure = (campaignId = 'default', name = 'Adventurer', heroClass = 'Fighter') =>
   post<{ success: boolean }>('/game/new', { campaignId, name, heroClass });
+
+// Login & Players
+export const login = (name: string, heroClass = 'Fighter') =>
+  post<{ playerId: string; name: string }>('/login', { name, heroClass });
+export const getPlayers = () =>
+  get<{ players: Array<{ playerId: string; name: string }> }>('/players');
+export const joinGame = (heroClass = 'Fighter') =>
+  post<GameStateResponse & { spawnX?: number; spawnY?: number }>('/game/join', { heroClass });
+export const leaveGame = () =>
+  post<{ success: boolean }>('/leave', {});
+export const getSessionStatus = () =>
+  get<{ activePlayers: number; worldExists: boolean; levelName: string }>('/session/status');
 
 // Health
 export async function healthCheck(): Promise<{ status: string }> {

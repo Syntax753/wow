@@ -16,6 +16,11 @@ import {
   getCampaign,
   getGameState,
   startNewAdventure,
+  login,
+  joinGame,
+  leaveGame,
+  setPlayerId,
+  getPlayerId,
   type HeroState,
   type Inspector,
   type LogEntry as ApiLogEntry,
@@ -27,12 +32,12 @@ import InventoryModal from './InventoryModal'
 import './index.css'
 
 type ServiceStatus = 'connecting' | 'online' | 'offline'
-type Screen = 'splash' | 'settings' | 'game'
+type Screen = 'login' | 'splash' | 'settings' | 'game'
 
 
 
 function App() {
-  const [screen, setScreen] = useState<Screen>('splash')
+  const [screen, setScreen] = useState<Screen>('login')
   const [gameState, setGameState] = useState<GameState>(createInitialState)
   const [serviceStatus, setServiceStatus] = useState<ServiceStatus>('connecting')
   const [processing, setProcessing] = useState(false)
@@ -45,6 +50,8 @@ function App() {
   const [levelName, setLevelName] = useState<string>('')
   const [showInventory, setShowInventory] = useState(false)
   const [inventory, setInventory] = useState<InventoryState | null>(null)
+  const [playerName, setPlayerName] = useState('')
+  const [loginInput, setLoginInput] = useState('')
 
   // Multi-layered visual state orchestrator
   const [mapGrid, setMapGrid] = useState<Tile[][]>([])
@@ -52,9 +59,42 @@ function App() {
   // Track whether initial sync has completed
   const initialSyncDone = useRef(false)
 
+  // Check for existing player session on mount
   useEffect(() => {
+    const pidMatch = document.cookie.match(/(?:^|; )wow_player_id=([^;]*)/)
+    const nameMatch = document.cookie.match(/(?:^|; )wow_player_name=([^;]*)/)
+    if (pidMatch && nameMatch) {
+      const pid = decodeURIComponent(pidMatch[1])
+      const pname = decodeURIComponent(nameMatch[1])
+      setPlayerId(pid)
+      setPlayerName(pname)
+      // Validate session — if hero exists, go to splash
+      getHero().then((res) => {
+        setHero(res.data)
+        setScreen('splash')
+      }).catch(() => {
+        // Server restarted, need to re-login
+        setScreen('login')
+      })
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!getPlayerId()) return
     getHero().then((res) => setHero(res.data)).catch(() => {})
     getInventory().then((res) => setInventory(res.data)).catch(() => {})
+  }, [playerName])
+
+  // Leave game on tab close
+  useEffect(() => {
+    const handleUnload = () => {
+      const pid = getPlayerId()
+      if (pid) {
+        navigator.sendBeacon('/api/leave', new Blob([JSON.stringify({ playerId: pid })], { type: 'application/json' }))
+      }
+    }
+    window.addEventListener('beforeunload', handleUnload)
+    return () => window.removeEventListener('beforeunload', handleUnload)
   }, [])
 
   // Check service health
@@ -322,6 +362,75 @@ function App() {
   }
   const ac = hero?.armorClass ?? 10
 
+  if (screen === 'login') {
+    return (
+      <div className="game-container splash-screen" style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+        <StarfieldBg />
+        <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <pre className="ascii-title" style={{ color: 'var(--terminal-accent)', textShadow: '0 0 30px var(--terminal-accent), 0 0 60px rgba(255,180,84,0.3)', userSelect: 'none', fontSize: '3em', lineHeight: 1.2, fontFamily: 'var(--font-mono)' }}>{
+`\u2588   \u2588  \u2588\u2588\u2588  \u2588   \u2588
+\u2588   \u2588 \u2588   \u2588 \u2588   \u2588
+\u2588 \u2588 \u2588 \u2588   \u2588 \u2588 \u2588 \u2588
+\u2588\u2588 \u2588\u2588 \u2588   \u2588 \u2588\u2588 \u2588\u2588
+\u2588   \u2588  \u2588\u2588\u2588  \u2588   \u2588`
+          }</pre>
+          <div style={{ color: 'var(--terminal-dim)', fontSize: '12px', letterSpacing: '6px', textTransform: 'uppercase', marginTop: '8px' }}>
+            World of WoW
+          </div>
+          <form
+            style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '50px', width: '320px' }}
+            onSubmit={async (e) => {
+              e.preventDefault()
+              const name = loginInput.trim()
+              if (!name) return
+              try {
+                const res = await login(name)
+                const pid = res.data.playerId
+                setPlayerId(pid)
+                setPlayerName(name)
+                document.cookie = `wow_player_id=${encodeURIComponent(pid)}; path=/; max-age=86400`
+                document.cookie = `wow_player_name=${encodeURIComponent(name)}; path=/; max-age=86400`
+                setScreen('splash')
+              } catch (err) {
+                console.error('Login failed:', err)
+              }
+            }}
+          >
+            <input
+              type="text"
+              placeholder="Enter your name..."
+              value={loginInput}
+              onChange={(e) => setLoginInput(e.target.value)}
+              autoFocus
+              maxLength={20}
+              style={{
+                background: 'rgba(10,14,20,0.8)',
+                border: '1px solid var(--terminal-accent)',
+                color: 'var(--terminal-bright)',
+                padding: '14px 18px',
+                fontSize: '16px',
+                fontFamily: 'var(--font-mono)',
+                borderRadius: '4px',
+                textAlign: 'center',
+                outline: 'none',
+              }}
+            />
+            <button
+              type="submit"
+              className="splash-btn"
+              disabled={!loginInput.trim() || serviceStatus !== 'online'}
+            >
+              Enter Dungeon
+            </button>
+          </form>
+          <div style={{ marginTop: '30px', fontSize: '12px', color: 'var(--terminal-dim)' }}>
+            Service Status: <span className={`status-dot ${serviceStatus}`} />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (screen === 'splash') {
     return (
       <div className="game-container splash-screen" style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
@@ -337,6 +446,11 @@ function App() {
           <div className="splash-subtitle" style={{ color: 'var(--terminal-dim)', fontSize: '12px', letterSpacing: '6px', textTransform: 'uppercase', marginTop: '8px' }}>
             World of WoW
           </div>
+          {playerName && (
+            <div style={{ color: 'var(--terminal-accent)', fontSize: '14px', marginTop: '12px', letterSpacing: '2px' }}>
+              Playing as: {playerName}
+            </div>
+          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '50px', width: '320px' }}>
             <button
               className="splash-btn"
@@ -348,20 +462,14 @@ function App() {
             <button
               className="splash-btn"
               onClick={async () => {
-                // Clear all cookies
-                document.cookie.split(';').forEach(c => {
-                  document.cookie = c.trim().split('=')[0] + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/'
-                })
-                // Reset frontend state
                 initialSyncDone.current = false
                 setMapGrid([])
                 setGameState(createInitialState())
                 setHero(null)
                 setOverlay(null)
                 setLevelName('')
-                // Reset server state and generate fresh world
                 try {
-                  await startNewAdventure('default')
+                  await startNewAdventure('default', playerName || 'Adventurer')
                   const heroRes = await getHero()
                   setHero(heroRes.data)
                 } catch (err) {
@@ -372,6 +480,35 @@ function App() {
               disabled={serviceStatus !== 'online' || processing}
             >
               New Adventure
+            </button>
+            <button
+              className="splash-btn"
+              onClick={async () => {
+                initialSyncDone.current = false
+                setMapGrid([])
+                setGameState(createInitialState())
+                setHero(null)
+                setOverlay(null)
+                setLevelName('')
+                try {
+                  const joinRes = await joinGame()
+                  const heroRes = await getHero()
+                  setHero(heroRes.data)
+                  // Set spawn position from server
+                  if (joinRes.data.spawnX !== undefined) {
+                    setGameState(prev => ({
+                      ...prev,
+                      player: { x: joinRes.data.spawnX!, y: joinRes.data.spawnY! }
+                    }))
+                  }
+                } catch (err) {
+                  console.error('Online join error:', err)
+                }
+                setScreen('game')
+              }}
+              disabled={serviceStatus !== 'online' || processing}
+            >
+              Online
             </button>
             <button
               className="splash-btn"
@@ -417,7 +554,7 @@ function App() {
                </div>
              ))}
            </div>
-           <div style={{ marginTop: '40px', display: 'flex', gap: '20px' }}>
+           <div style={{ marginTop: '20px', display: 'flex', gap: '20px' }}>
              <button className="splash-btn" onClick={saveSettings}>
                Save and Return
              </button>
@@ -431,7 +568,7 @@ function App() {
     <div className="game-container">
       {/* Header */}
       <div className="header-bar">
-        <h1 style={{ cursor: 'pointer' }} onClick={() => setScreen('splash')}>⚔ World of WoW ⚔</h1>
+        <h1 style={{ cursor: 'pointer' }} onClick={() => { leaveGame().catch(() => {}); setScreen('splash') }}>⚔ World of WoW ⚔</h1>
         <div className="status-indicators">
           <span className={`status-dot ${serviceStatus}`}>dice</span>
           <span className={`status-dot ${serviceStatus}`}>dnd</span>

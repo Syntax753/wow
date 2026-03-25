@@ -26,7 +26,8 @@
       "Bash(powershell -ExecutionPolicy Bypass -File \"C:/Users/synt_/dev/wow/scripts/fix-wif.ps1\")",
       "Bash(npm --version)",
       "WebFetch(domain:github.com)",
-      "Bash(powershell -ExecutionPolicy Bypass -File \"C:/Users/synt_/dev/wow/scripts/check-perms.ps1\")"
+      "Bash(powershell -ExecutionPolicy Bypass -File \"C:/Users/synt_/dev/wow/scripts/check-perms.ps1\")",
+      "Bash(find /c/Users/synt_/dev/wow/packages/data -type f -name *.json)"
     ]
   }
 }

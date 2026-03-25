@@ -28,6 +28,34 @@ const actionClient = new ActionService(ACTION_URL, grpc.credentials.createInsecu
 const worldClient = new WorldService(WORLD_URL, grpc.credentials.createInsecure());
 const gameClient = new GameService(GAME_URL, grpc.credentials.createInsecure());
 
+// ── Player identity & session tracking ────────────────────────────────
+const players = {}; // { [playerId]: { name, heroId, active, lastSeen, spawnIndex } }
+let nextSpawnIndex = 0;
+
+function getPlayerId(req) {
+  return req.headers['x-player-id'] || 'default';
+}
+
+function getActivePlayers() {
+  return Object.values(players).filter(p => p.active).length;
+}
+
+function touchPlayer(req) {
+  const pid = getPlayerId(req);
+  if (players[pid]) players[pid].lastSeen = Date.now();
+}
+
+// Clean up stale players (no activity for 5 minutes)
+setInterval(() => {
+  const cutoff = Date.now() - 5 * 60 * 1000;
+  for (const [pid, p] of Object.entries(players)) {
+    if (p.active && p.lastSeen < cutoff) {
+      p.active = false;
+      log.info(`Player ${p.name} (${pid}) timed out`);
+    }
+  }
+}, 60000);
+
 function cloneReqRes(obj) {
   const clone = { ...obj };
   delete clone.trace;
@@ -93,7 +121,7 @@ function json(res, statusCode, data) {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Player-Id',
   });
   res.end(JSON.stringify(data));
 }
@@ -193,14 +221,14 @@ const server = http.createServer(async (req, res) => {
 
     // === Hero Service ===
     } else if (req.url === '/api/hero' && req.method === 'GET') {
-      const result = await grpcCall(heroClient, 'hero-service', 'getHero', { heroId: 'default' }, rootSpan);
+      const result = await grpcCall(heroClient, 'hero-service', 'getHero', { heroId: getPlayerId(req) }, rootSpan);
       rootSpan.timeEnd = Date.now();
       rootSpan.dataRet = cloneReqRes(result);
       json(res, 200, envelope(result, [], rootSpan));
 
     } else if (req.url === '/api/hero' && req.method === 'POST') {
       const result = await grpcCall(heroClient, 'hero-service', 'resetHero', {
-        heroId: 'default',
+        heroId: getPlayerId(req),
         name: body.name || 'Adventurer',
         heroClass: body.heroClass || 'Fighter',
       }, rootSpan);
@@ -212,7 +240,7 @@ const server = http.createServer(async (req, res) => {
 
     } else if (req.url === '/api/hero/stat' && req.method === 'POST') {
       const result = await grpcCall(heroClient, 'hero-service', 'updateStat', {
-        heroId: 'default',
+        heroId: getPlayerId(req),
         statName: body.statName,
         delta: body.delta,
       }, rootSpan);
@@ -225,14 +253,14 @@ const server = http.createServer(async (req, res) => {
 
     // === Inventory Service ===
     } else if (req.url === '/api/inventory' && req.method === 'GET') {
-      const result = await grpcCall(inventoryClient, 'inventory-service', 'getInventory', { heroId: 'default' }, rootSpan);
+      const result = await grpcCall(inventoryClient, 'inventory-service', 'getInventory', { heroId: getPlayerId(req) }, rootSpan);
       rootSpan.timeEnd = Date.now();
       rootSpan.dataRet = cloneReqRes(result);
       json(res, 200, envelope(result, [], rootSpan));
 
     } else if (req.url === '/api/inventory/add' && req.method === 'POST') {
       const result = await grpcCall(inventoryClient, 'inventory-service', 'addItem', {
-        heroId: 'default',
+        heroId: getPlayerId(req),
         item: body.item,
       }, rootSpan);
       rootSpan.timeEnd = Date.now();
@@ -243,7 +271,7 @@ const server = http.createServer(async (req, res) => {
 
     } else if (req.url === '/api/inventory/drop' && req.method === 'POST') {
       const result = await grpcCall(inventoryClient, 'inventory-service', 'dropItem', {
-        heroId: 'default',
+        heroId: getPlayerId(req),
         itemId: body.itemId,
       }, rootSpan);
       rootSpan.timeEnd = Date.now();
@@ -254,7 +282,7 @@ const server = http.createServer(async (req, res) => {
 
     } else if (req.url === '/api/inventory/use' && req.method === 'POST') {
       const result = await grpcCall(inventoryClient, 'inventory-service', 'useItem', {
-        heroId: 'default',
+        heroId: getPlayerId(req),
         itemId: body.itemId,
       }, rootSpan);
       rootSpan.timeEnd = Date.now();
@@ -265,15 +293,17 @@ const server = http.createServer(async (req, res) => {
 
     // === Unified Input Handler ===
     } else if (req.url === '/api/input' && req.method === 'POST') {
+      touchPlayer(req);
       const dndResult = await grpcCall(dndClient, 'dnd-service', 'processInput', {
         key: body.key || '',
         visualRange: body.visualRange || 8,
         currentEnemiesJson: body.currentEnemiesJson || '[]',
         level: body.level || 1,
+        heroId: getPlayerId(req),
       }, rootSpan);
 
       // Fetch world state for action-service overlay
-      const worldState = await grpcCall(worldClient, 'world-service', 'getWorldState', {}, rootSpan);
+      const worldState = await grpcCall(worldClient, 'world-service', 'getWorldState', { playerId: getPlayerId(req) }, rootSpan);
       let worldRooms = [];
       try { worldRooms = JSON.parse(worldState.roomsJson || '[]'); } catch {}
 
@@ -283,7 +313,7 @@ const server = http.createServer(async (req, res) => {
         playerY: dndResult.playerY || 0,
         level: body.level || 1,
         rooms: worldRooms,
-        heroId: 'default',
+        heroId: getPlayerId(req),
       }, rootSpan);
 
       rootSpan.timeEnd = Date.now();
@@ -311,16 +341,18 @@ const server = http.createServer(async (req, res) => {
 
     // === Game Loop Sync (Map Modifiers + Actions in one unified trace) ===
     } else if (req.url === '/api/sync' && req.method === 'POST') {
+      touchPlayer(req);
       // Run DnD map modifiers (will init world if needed)
       const dndResult = await grpcCall(dndClient, 'dnd-service', 'computeMapModifiers', {
         playerX: body.playerX || 0,
         playerY: body.playerY || 0,
         visualRange: body.visualRange || 8,
         currentEnemiesJson: body.currentEnemiesJson || "[]",
+        heroId: getPlayerId(req),
       }, rootSpan);
 
       // Fetch world state from world-service for action-service
-      const worldState = await grpcCall(worldClient, 'world-service', 'getWorldState', {}, rootSpan);
+      const worldState = await grpcCall(worldClient, 'world-service', 'getWorldState', { playerId: getPlayerId(req) }, rootSpan);
       let worldRooms = [];
       try { worldRooms = JSON.parse(worldState.roomsJson || '[]'); } catch {}
 
@@ -330,7 +362,7 @@ const server = http.createServer(async (req, res) => {
         playerY: body.playerY || 0,
         level: body.level || 1,
         rooms: worldRooms,
-        heroId: 'default',
+        heroId: getPlayerId(req),
       }, rootSpan);
       rootSpan.timeEnd = Date.now();
       rootSpan.dataRet = cloneReqRes({ dndResult, actionResult });
@@ -348,6 +380,97 @@ const server = http.createServer(async (req, res) => {
       }
       
       json(res, 200, envelope({ map: mapPayload, actions: actionResult.overlay }, [], rootSpan));
+
+    // === Login & Players ===
+    } else if (req.url === '/api/login' && req.method === 'POST') {
+      const name = (body.name || 'Adventurer').trim();
+      const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 20);
+      const playerId = `${slug}-${crypto.randomUUID().slice(0, 4)}`;
+
+      // Create hero for this player
+      await grpcCall(heroClient, 'hero-service', 'resetHero', {
+        heroId: playerId,
+        name,
+        heroClass: body.heroClass || 'Fighter',
+      }, rootSpan);
+
+      players[playerId] = { name, heroId: playerId, active: false, lastSeen: Date.now(), spawnIndex: -1 };
+      rootSpan.timeEnd = Date.now();
+      json(res, 200, envelope({ playerId, name }, [
+        logEntry(`${name} has entered the dungeon.`, 'system', 'login'),
+      ], rootSpan));
+
+    } else if (req.url === '/api/players' && req.method === 'GET') {
+      rootSpan.timeEnd = Date.now();
+      const playerList = Object.entries(players).map(([id, p]) => ({ playerId: id, name: p.name }));
+      json(res, 200, envelope({ players: playerList }, [], rootSpan));
+
+    } else if (req.url === '/api/game/join' && req.method === 'POST') {
+      const playerId = getPlayerId(req);
+      const playerInfo = players[playerId];
+      const name = playerInfo?.name || body.name || 'Adventurer';
+
+      // Check if world needs regeneration (no active players left)
+      let gameRes = await grpcCall(gameClient, 'game-service', 'getGameState', {}, rootSpan);
+      const activePlayers = getActivePlayers();
+
+      if (activePlayers === 0 || !gameRes.levelName) {
+        // No active players — generate fresh world
+        nextSpawnIndex = 0;
+        await grpcCall(heroClient, 'hero-service', 'resetHero', {
+          heroId: playerId, name, heroClass: body.heroClass || 'Fighter',
+        }, rootSpan);
+        gameRes = await grpcCall(gameClient, 'game-service', 'startGame', {
+          level: 0, campaignId: body.campaignId || 'default', maxPlayers: 4,
+        }, rootSpan);
+      }
+
+      // Assign spawn position
+      const spawns = JSON.parse(gameRes.spawnPositionsJson || '[]');
+      const spawnIdx = nextSpawnIndex % Math.max(spawns.length, 1);
+      const spawn = spawns[spawnIdx] || { x: 0, y: 0 };
+      nextSpawnIndex++;
+
+      if (players[playerId]) {
+        players[playerId].active = true;
+        players[playerId].lastSeen = Date.now();
+        players[playerId].spawnIndex = spawnIdx;
+      }
+
+      await grpcCall(heroClient, 'hero-service', 'resetHero', {
+        heroId: playerId, name, heroClass: body.heroClass || 'Fighter',
+      }, rootSpan);
+      await grpcCall(heroClient, 'hero-service', 'updatePosition', {
+        heroId: playerId, x: spawn.x, y: spawn.y,
+      }, rootSpan);
+
+      rootSpan.timeEnd = Date.now();
+      json(res, 200, envelope({
+        ...gameRes,
+        spawnX: spawn.x,
+        spawnY: spawn.y,
+      }, [
+        logEntry(`${name} joins the adventure at spawn ${spawnIdx + 1}...`, 'discovery', 'game'),
+      ], rootSpan));
+
+    } else if (req.url === '/api/leave' && req.method === 'POST') {
+      // Support both header and body for playerId (sendBeacon can't send custom headers)
+      const playerId = getPlayerId(req) !== 'default' ? getPlayerId(req) : (body.playerId || 'default');
+      if (players[playerId]) {
+        players[playerId].active = false;
+        log.info(`Player ${players[playerId].name} (${playerId}) left the game`);
+      }
+      rootSpan.timeEnd = Date.now();
+      json(res, 200, envelope({ success: true }, [], rootSpan));
+
+    } else if (req.url === '/api/session/status' && req.method === 'GET') {
+      const gameRes = await grpcCall(gameClient, 'game-service', 'getGameState', {}, rootSpan);
+      rootSpan.timeEnd = Date.now();
+      json(res, 200, envelope({
+        activePlayers: getActivePlayers(),
+        worldExists: !!gameRes.levelName,
+        levelName: gameRes.levelName || '',
+      }, [], rootSpan));
 
     // === Health ===
     } else if (req.url === '/api/health') {
@@ -383,7 +506,7 @@ const server = http.createServer(async (req, res) => {
     } else if (req.url === '/api/game/new' && req.method === 'POST') {
       // Reset hero to defaults
       await grpcCall(heroClient, 'hero-service', 'resetHero', {
-        heroId: 'default',
+        heroId: getPlayerId(req),
         name: body.name || 'Adventurer',
         heroClass: body.heroClass || 'Fighter',
       }, rootSpan);

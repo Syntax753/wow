@@ -47,10 +47,12 @@ message PlaceStructureResponse {
   string tiles_json = 4;
   string rooms_json = 5;
   TraceInfo trace = 6;
+  string actual_direction = 7;
 }
 
 message GetWorldStateRequest {
   TraceInfo trace = 1;
+  string player_id = 2;
 }
 
 message GetWorldStateResponse {
@@ -63,6 +65,7 @@ message GetWorldStateResponse {
 message RevealTilesRequest {
   string visible_coords_json = 1;
   TraceInfo trace = 2;
+  string player_id = 3;
 }
 
 message RevealTilesResponse {

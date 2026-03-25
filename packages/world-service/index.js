@@ -7,7 +7,13 @@ const PORT = process.env.WORLD_SERVICE_PORT || 50060;
 // ── Authoritative world state (in-memory) ──────────────────────────────
 let worldTiles = {};     // {"x,y": char}
 let worldRooms = [];     // [{x, y, width, height, description}]
-let revealedTiles = new Set();  // Set of "x,y" coords the player has ever seen
+let revealedTilesPerPlayer = {};  // { [playerId]: Set of "x,y" coords }
+
+function getPlayerRevealed(playerId) {
+  const id = playerId || 'default';
+  if (!revealedTilesPerPlayer[id]) revealedTilesPerPlayer[id] = new Set();
+  return revealedTilesPerPlayer[id];
+}
 
 // ── Collision detection ────────────────────────────────────────────────
 // Extracted from room-service. Corridors use relaxed rules: they can
@@ -139,6 +145,7 @@ function placeStructure(call, callback) {
 
     let fitSuccess = false;
     let originX = 0, originY = 0;
+    let actualDir = '';
 
     if (structureType === 'corridor') {
       // Corridor placement — rebuild tiles based on actual direction
@@ -193,6 +200,7 @@ function placeStructure(call, callback) {
         fitSuccess = true;
         originX = rx;
         originY = ry;
+        actualDir = dir;
         // Write rebuilt tiles to world coordinates
         for (const [coord, ch] of Object.entries(corrTiles)) {
           const [lx, ly] = coord.split(',').map(Number);
@@ -249,7 +257,8 @@ function placeStructure(call, callback) {
       originY,
       tilesJson: JSON.stringify(worldTiles),
       roomsJson: JSON.stringify(worldRooms),
-      trace
+      trace,
+      actualDirection: actualDir
     });
   } catch (err) {
     log.error('Error placing structure:', err.message);
@@ -268,10 +277,12 @@ function getWorldState(call, callback) {
     subSpans: []
   };
 
+  const playerId = call.request.playerId || 'default';
+  const revealed = getPlayerRevealed(playerId);
   callback(null, {
     tilesJson: JSON.stringify(worldTiles),
     roomsJson: JSON.stringify(worldRooms),
-    revealedJson: JSON.stringify([...revealedTiles]),
+    revealedJson: JSON.stringify([...revealed]),
     trace
   });
 }
@@ -289,13 +300,15 @@ function revealTiles(call, callback) {
   };
 
   try {
+    const playerId = call.request.playerId || 'default';
+    const revealed = getPlayerRevealed(playerId);
     const visibleCoords = JSON.parse(call.request.visibleCoordsJson || '[]');
     for (const coord of visibleCoords) {
-      revealedTiles.add(coord);
+      revealed.add(coord);
     }
 
     callback(null, {
-      revealedJson: JSON.stringify([...revealedTiles]),
+      revealedJson: JSON.stringify([...revealed]),
       trace
     });
   } catch (err) {
@@ -331,7 +344,7 @@ function initWorld(call, callback) {
     // Clear world state
     worldTiles = {};
     worldRooms = [];
-    revealedTiles = new Set();
+    revealedTilesPerPlayer = {};
 
     // Write tiles from local coords to world coords
     for (const [coord, ch] of Object.entries(localTiles)) {
@@ -377,7 +390,7 @@ function resetWorld(call, callback) {
 
   worldTiles = {};
   worldRooms = [];
-  revealedTiles = new Set();
+  revealedTilesPerPlayer = {};
   log.info('World state reset');
 
   callback(null, { success: true, trace });
