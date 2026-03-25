@@ -633,10 +633,31 @@ const server = http.createServer(async (req, res) => {
 
     // === Login & Players ===
     } else if (req.url === '/api/login' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const { name, heroClass } = body;
+      const guestName = (name || 'Adventurer').slice(0, 20);
+      const slug = guestName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+      const playerId = `guest-${slug}-${Date.now().toString(36)}`;
+
+      await grpcCall(heroClient, 'hero-service', 'resetHero', {
+        heroId: playerId,
+        name: guestName,
+        heroClass: heroClass || 'Fighter',
+      }, rootSpan);
+
+      if (!players[playerId]) {
+        players[playerId] = { name: guestName, heroId: playerId, active: false, lastSeen: Date.now(), spawnIndex: -1, color: assignColor() };
+      }
+
+      log.info(`Guest login: ${guestName} (${playerId})`);
+
+      const maxAge = 604800;
+      res.setHeader('Set-Cookie', [
+        `wow_player_id=${encodeURIComponent(playerId)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`,
+        `wow_player_name=${encodeURIComponent(guestName)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`,
+      ]);
       rootSpan.timeEnd = Date.now();
-      json(res, 403, envelope(null, [
-        logEntry('Guest login is disabled. Please sign in with GitHub.', 'system', 'login'),
-      ], rootSpan));
+      json(res, 200, envelope({ playerId, name: guestName }, [], rootSpan));
 
     } else if (req.url === '/api/players' && req.method === 'GET') {
       const playerList = [];

@@ -20,6 +20,7 @@ import {
   logout,
   joinGame,
   leaveGame,
+  login,
   setPlayerId,
   getPlayerId,
   type HeroState,
@@ -514,6 +515,24 @@ function App() {
             World of WoW
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '50px', width: '320px' }}>
+            <button
+              className="splash-btn"
+              disabled={serviceStatus !== 'online'}
+              style={{ opacity: serviceStatus !== 'online' ? 0.5 : 1 }}
+              onClick={async () => {
+                const res = await login('Adventurer')
+                if (res.data) {
+                  setPlayerId(res.data.playerId)
+                  setPlayerName(res.data.name)
+                  setAuthProvider('guest')
+                  document.cookie = `wow_player_id=${encodeURIComponent(res.data.playerId)}; path=/; max-age=604800; samesite=lax`
+                  document.cookie = `wow_player_name=${encodeURIComponent(res.data.name)}; path=/; max-age=604800; samesite=lax`
+                  setScreen('splash')
+                }
+              }}
+            >
+              Play as Guest
+            </button>
             <a
               href="/api/auth/github"
               className="splash-btn"
