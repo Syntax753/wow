@@ -341,8 +341,9 @@ function App() {
             tClass += ' obscured'
           }
 
+          const tileStyle = tile.color ? { color: tile.color } : undefined
           return (
-            <span key={x} className={tClass}>
+            <span key={x} className={tClass} style={tileStyle}>
               {tile.visible || tile.revealed ? tile.char : ' '}
             </span>
           )

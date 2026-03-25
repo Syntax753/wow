@@ -17,6 +17,7 @@ message ProcessInputRequest {
   int32 level = 4;
   TraceInfo trace = 5;
   string hero_id = 6;
+  string players_json = 7;
 }
 
 message ProcessInputResponse {
@@ -54,6 +55,7 @@ message ComputeMapModifiersRequest {
   string current_enemies_json = 5;
   TraceInfo trace = 7;
   string hero_id = 8;
+  string players_json = 9;
 }
 
 message ComputeMapModifiersResponse {

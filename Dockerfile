@@ -16,6 +16,7 @@ COPY packages/render-service/package.json packages/render-service/
 COPY packages/world-service/package.json packages/world-service/
 COPY packages/input-service/package.json packages/input-service/
 COPY packages/game-service/package.json packages/game-service/
+COPY packages/multi-service/package.json packages/multi-service/
 COPY packages/generators/room-service/package.json packages/generators/room-service/
 COPY packages/generators/enemy-service/package.json packages/generators/enemy-service/
 COPY packages/wow/package.json packages/wow/

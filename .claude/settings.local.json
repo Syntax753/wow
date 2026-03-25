@@ -27,7 +27,10 @@
       "Bash(npm --version)",
       "WebFetch(domain:github.com)",
       "Bash(powershell -ExecutionPolicy Bypass -File \"C:/Users/synt_/dev/wow/scripts/check-perms.ps1\")",
-      "Bash(find /c/Users/synt_/dev/wow/packages/data -type f -name *.json)"
+      "Bash(find /c/Users/synt_/dev/wow/packages/data -type f -name *.json)",
+      "Bash(ls:*)",
+      "Bash(node -e \"require\\(''./packages/proto''\\)\")",
+      "Bash(node -e \"require\\(''''./packages/multi-service/index.js''''\\)\")"
     ]
   }
 }

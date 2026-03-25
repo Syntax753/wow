@@ -14,6 +14,7 @@ const ports = [
   50060, // WorldService
   50061, // InputService
   50062, // GameService
+  50063, // MultiService
   8080, // React Frontend
 ];
 

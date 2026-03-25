@@ -6,6 +6,8 @@ const crypto = require('crypto');
 
 const PORT = process.env.RENDER_PORT || 50058;
 
+const DEFAULT_PLAYER_COLOR = '#22c55e'; // green
+
 function cloneReqRes(obj) {
   const clone = { ...obj };
   delete clone.trace;
@@ -93,13 +95,35 @@ async function compositeLayers(call, callback) {
       }
     }
 
-    // Explicitly overlay the player avatar at the very end (Layer 100)
+    // Overlay all players (Layer 100) — other players first, then the calling player on top
+    let allPlayers = [];
+    try { allPlayers = JSON.parse(call.request.playersJson || '[]'); } catch {}
+
+    if (allPlayers.length === 0) {
+      // Single-player fallback
+      allPlayers = [{ x: playerX, y: playerY, color: DEFAULT_PLAYER_COLOR }];
+    }
+
+    for (const p of allPlayers) {
+      const lx = p.x - minX;
+      const ly = p.y - minY;
+      if (lx >= 0 && lx < viewportWidth && ly >= 0 && ly < viewportHeight) {
+        mapGrid[ly][lx].char = '@';
+        mapGrid[ly][lx].visible = true;
+        mapGrid[ly][lx].revealed = true;
+        mapGrid[ly][lx].color = p.color || DEFAULT_PLAYER_COLOR;
+      }
+    }
+
+    // Ensure calling player is on top (re-overlay)
     const pLocalX = playerX - minX;
     const pLocalY = playerY - minY;
     if (pLocalX >= 0 && pLocalX < viewportWidth && pLocalY >= 0 && pLocalY < viewportHeight) {
+      const callingPlayer = allPlayers.find(p => p.x === playerX && p.y === playerY);
       mapGrid[pLocalY][pLocalX].char = '@';
       mapGrid[pLocalY][pLocalX].visible = true;
       mapGrid[pLocalY][pLocalX].revealed = true;
+      mapGrid[pLocalY][pLocalX].color = callingPlayer?.color || DEFAULT_PLAYER_COLOR;
     }
 
     log.debug(`Compositing completed for viewport around ${playerX},${playerY}`);

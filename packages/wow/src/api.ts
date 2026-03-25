@@ -138,6 +138,7 @@ export interface Tile {
   char: string;
   visible: boolean;
   revealed: boolean;
+  color?: string;
 }
 
 export interface ComputeMapModifiersResponse {

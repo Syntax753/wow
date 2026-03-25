@@ -7,7 +7,7 @@ const http = require('http');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { grpc, DiceService, DndService, HeroService, InventoryService, ActionService, WorldService, GameService, createLogger } = require('@wow/proto');
+const { grpc, DiceService, DndService, HeroService, InventoryService, ActionService, WorldService, GameService, MultiService, createLogger } = require('@wow/proto');
 
 const log = createLogger('WoW API');
 
@@ -19,6 +19,7 @@ const INVENTORY_URL = process.env.INVENTORY_SERVICE_URL || 'localhost:50054';
 const ACTION_URL = process.env.ACTION_SERVICE_URL || 'localhost:50055';
 const WORLD_URL = process.env.WORLD_SERVICE_URL || 'localhost:50060';
 const GAME_URL = process.env.GAME_SERVICE_URL || 'localhost:50062';
+const MULTI_URL = process.env.MULTI_SERVICE_URL || 'localhost:50063';
 
 const diceClient = new DiceService(DICE_URL, grpc.credentials.createInsecure());
 const dndClient = new DndService(DND_URL, grpc.credentials.createInsecure());
@@ -27,10 +28,38 @@ const inventoryClient = new InventoryService(INVENTORY_URL, grpc.credentials.cre
 const actionClient = new ActionService(ACTION_URL, grpc.credentials.createInsecure());
 const worldClient = new WorldService(WORLD_URL, grpc.credentials.createInsecure());
 const gameClient = new GameService(GAME_URL, grpc.credentials.createInsecure());
+const multiClient = new MultiService(MULTI_URL, grpc.credentials.createInsecure());
 
 // ── Player identity & session tracking ────────────────────────────────
-const players = {}; // { [playerId]: { name, heroId, active, lastSeen, spawnIndex } }
+const PLAYER_COLORS = [
+  '#22c55e', '#ef4444', '#3b82f6', '#eab308', '#a855f7',
+  '#06b6d4', '#f97316', '#ec4899', '#14b8a6', '#8b5cf6',
+];
+
+const players = {}; // { [playerId]: { name, heroId, active, lastSeen, spawnIndex, color } }
 let nextSpawnIndex = 0;
+
+function assignColor() {
+  const usedColors = new Set(Object.values(players).filter(p => p.active).map(p => p.color));
+  for (const c of PLAYER_COLORS) {
+    if (!usedColors.has(c)) return c;
+  }
+  return PLAYER_COLORS[Object.keys(players).length % PLAYER_COLORS.length];
+}
+
+async function getActivePlayersJson(rootSpan) {
+  const activePlayers = Object.entries(players).filter(([, p]) => p.active);
+  const positions = [];
+  for (const [pid, p] of activePlayers) {
+    try {
+      const hero = await grpcCall(heroClient, 'hero-service', 'getHero', { heroId: pid }, rootSpan);
+      positions.push({ x: hero.positionX || 0, y: hero.positionY || 0, playerId: pid, color: p.color });
+    } catch {
+      // Hero not found — skip
+    }
+  }
+  return JSON.stringify(positions);
+}
 
 function getPlayerId(req) {
   return req.headers['x-player-id'] || 'default';
@@ -294,13 +323,29 @@ const server = http.createServer(async (req, res) => {
     // === Unified Input Handler ===
     } else if (req.url === '/api/input' && req.method === 'POST') {
       touchPlayer(req);
-      const dndResult = await grpcCall(dndClient, 'dnd-service', 'processInput', {
-        key: body.key || '',
-        visualRange: body.visualRange || 8,
-        currentEnemiesJson: body.currentEnemiesJson || '[]',
-        level: body.level || 1,
-        heroId: getPlayerId(req),
-      }, rootSpan);
+      const pid = getPlayerId(req);
+      const isMulti = players[pid]?.multiplayer;
+
+      let dndResult;
+      if (isMulti) {
+        dndResult = await grpcCall(multiClient, 'multi-service', 'processMultiInput', {
+          playerId: pid,
+          key: body.key || '',
+          visualRange: body.visualRange || 8,
+          currentEnemiesJson: body.currentEnemiesJson || '[]',
+          level: body.level || 1,
+        }, rootSpan);
+      } else {
+        const playersJson = await getActivePlayersJson(rootSpan);
+        dndResult = await grpcCall(dndClient, 'dnd-service', 'processInput', {
+          key: body.key || '',
+          visualRange: body.visualRange || 8,
+          currentEnemiesJson: body.currentEnemiesJson || '[]',
+          level: body.level || 1,
+          heroId: pid,
+          playersJson,
+        }, rootSpan);
+      }
 
       // Fetch world state for action-service overlay
       const worldState = await grpcCall(worldClient, 'world-service', 'getWorldState', { playerId: getPlayerId(req) }, rootSpan);
@@ -342,14 +387,30 @@ const server = http.createServer(async (req, res) => {
     // === Game Loop Sync (Map Modifiers + Actions in one unified trace) ===
     } else if (req.url === '/api/sync' && req.method === 'POST') {
       touchPlayer(req);
-      // Run DnD map modifiers (will init world if needed)
-      const dndResult = await grpcCall(dndClient, 'dnd-service', 'computeMapModifiers', {
-        playerX: body.playerX || 0,
-        playerY: body.playerY || 0,
-        visualRange: body.visualRange || 8,
-        currentEnemiesJson: body.currentEnemiesJson || "[]",
-        heroId: getPlayerId(req),
-      }, rootSpan);
+      const pid = getPlayerId(req);
+      const isMulti = players[pid]?.multiplayer;
+
+      let dndResult;
+      if (isMulti) {
+        dndResult = await grpcCall(multiClient, 'multi-service', 'syncMultiPlayer', {
+          playerId: pid,
+          playerX: body.playerX || 0,
+          playerY: body.playerY || 0,
+          visualRange: body.visualRange || 8,
+          currentEnemiesJson: body.currentEnemiesJson || '[]',
+        }, rootSpan);
+      } else {
+        const playersJson = await getActivePlayersJson(rootSpan);
+        // Run DnD map modifiers (will init world if needed)
+        dndResult = await grpcCall(dndClient, 'dnd-service', 'computeMapModifiers', {
+          playerX: body.playerX || 0,
+          playerY: body.playerY || 0,
+          visualRange: body.visualRange || 8,
+          currentEnemiesJson: body.currentEnemiesJson || "[]",
+          heroId: pid,
+          playersJson,
+        }, rootSpan);
+      }
 
       // Fetch world state from world-service for action-service
       const worldState = await grpcCall(worldClient, 'world-service', 'getWorldState', { playerId: getPlayerId(req) }, rootSpan);
@@ -394,7 +455,7 @@ const server = http.createServer(async (req, res) => {
         heroClass: body.heroClass || 'Fighter',
       }, rootSpan);
 
-      players[playerId] = { name, heroId: playerId, active: false, lastSeen: Date.now(), spawnIndex: -1 };
+      players[playerId] = { name, heroId: playerId, active: false, lastSeen: Date.now(), spawnIndex: -1, color: assignColor() };
       rootSpan.timeEnd = Date.now();
       json(res, 200, envelope({ playerId, name }, [
         logEntry(`${name} has entered the dungeon.`, 'system', 'login'),
@@ -410,66 +471,58 @@ const server = http.createServer(async (req, res) => {
       const playerInfo = players[playerId];
       const name = playerInfo?.name || body.name || 'Adventurer';
 
-      // Check if world needs regeneration (no active players left)
-      let gameRes = await grpcCall(gameClient, 'game-service', 'getGameState', {}, rootSpan);
-      const activePlayers = getActivePlayers();
+      // Delegate to multi-service for session management
+      const joinRes = await grpcCall(multiClient, 'multi-service', 'joinSession', {
+        playerId,
+        name,
+        heroClass: body.heroClass || 'Fighter',
+        campaignId: body.campaignId || 'default',
+      }, rootSpan);
 
-      if (activePlayers === 0 || !gameRes.levelName) {
-        // No active players — generate fresh world
-        nextSpawnIndex = 0;
-        await grpcCall(heroClient, 'hero-service', 'resetHero', {
-          heroId: playerId, name, heroClass: body.heroClass || 'Fighter',
-        }, rootSpan);
-        gameRes = await grpcCall(gameClient, 'game-service', 'startGame', {
-          level: 0, campaignId: body.campaignId || 'default', maxPlayers: 4,
-        }, rootSpan);
-      }
-
-      // Assign spawn position
-      const spawns = JSON.parse(gameRes.spawnPositionsJson || '[]');
-      const spawnIdx = nextSpawnIndex % Math.max(spawns.length, 1);
-      const spawn = spawns[spawnIdx] || { x: 0, y: 0 };
-      nextSpawnIndex++;
-
+      // Mark player as multiplayer in gateway
       if (players[playerId]) {
         players[playerId].active = true;
+        players[playerId].multiplayer = true;
         players[playerId].lastSeen = Date.now();
-        players[playerId].spawnIndex = spawnIdx;
+        players[playerId].color = joinRes.color;
       }
-
-      await grpcCall(heroClient, 'hero-service', 'resetHero', {
-        heroId: playerId, name, heroClass: body.heroClass || 'Fighter',
-      }, rootSpan);
-      await grpcCall(heroClient, 'hero-service', 'updatePosition', {
-        heroId: playerId, x: spawn.x, y: spawn.y,
-      }, rootSpan);
 
       rootSpan.timeEnd = Date.now();
       json(res, 200, envelope({
-        ...gameRes,
-        spawnX: spawn.x,
-        spawnY: spawn.y,
+        success: joinRes.success,
+        spawnX: joinRes.spawnX,
+        spawnY: joinRes.spawnY,
+        levelName: joinRes.levelName,
+        activePlayers: joinRes.activePlayers,
+        color: joinRes.color,
       }, [
-        logEntry(`${name} joins the adventure at spawn ${spawnIdx + 1}...`, 'discovery', 'game'),
+        logEntry(`${name} joins the adventure...`, 'discovery', 'game'),
       ], rootSpan));
 
     } else if (req.url === '/api/leave' && req.method === 'POST') {
       // Support both header and body for playerId (sendBeacon can't send custom headers)
       const playerId = getPlayerId(req) !== 'default' ? getPlayerId(req) : (body.playerId || 'default');
       if (players[playerId]) {
+        if (players[playerId].multiplayer) {
+          try {
+            await grpcCall(multiClient, 'multi-service', 'leaveSession', { playerId }, rootSpan);
+          } catch { /* multi-service may be down */ }
+        }
         players[playerId].active = false;
+        players[playerId].multiplayer = false;
         log.info(`Player ${players[playerId].name} (${playerId}) left the game`);
       }
       rootSpan.timeEnd = Date.now();
       json(res, 200, envelope({ success: true }, [], rootSpan));
 
     } else if (req.url === '/api/session/status' && req.method === 'GET') {
-      const gameRes = await grpcCall(gameClient, 'game-service', 'getGameState', {}, rootSpan);
+      const sessionInfo = await grpcCall(multiClient, 'multi-service', 'getSessionInfo', {}, rootSpan);
       rootSpan.timeEnd = Date.now();
       json(res, 200, envelope({
-        activePlayers: getActivePlayers(),
-        worldExists: !!gameRes.levelName,
-        levelName: gameRes.levelName || '',
+        activePlayers: sessionInfo.activePlayers,
+        worldExists: sessionInfo.worldExists,
+        levelName: sessionInfo.levelName || '',
+        players: sessionInfo.playersJson,
       }, [], rootSpan));
 
     // === Health ===

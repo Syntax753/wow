@@ -33,6 +33,7 @@ const enemyProto = loadProto('enemy.proto');
 const worldProto = loadProto('world.proto');
 const inputProto = loadProto('input.proto');
 const gameProto = loadProto('game.proto');
+const multiProto = loadProto('multi.proto');
 
 module.exports = {
   grpc,
@@ -58,6 +59,7 @@ module.exports = {
   WorldService: worldProto.world.WorldService,
   InputService: inputProto.input.InputService,
   GameService: gameProto.game.GameService,
+  MultiService: multiProto.multi.MultiService,
   createLogger,
   LogLevel,
 };

@@ -30,6 +30,7 @@ message CompositeLayersRequest {
   string current_enemies_json = 7;
   string rooms_json = 8;
   TraceInfo trace = 9;
+  string players_json = 10;
 }
 
 message CompositeLayersResponse {

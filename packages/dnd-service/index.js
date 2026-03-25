@@ -106,7 +106,7 @@ const getKeymapAsync = makeAsyncCall(gameClient, 'GetKeymap', 'game-service');
 const getGameStateAsync = makeAsyncCall(gameClient, 'GetGameState', 'game-service');
 
 // ── Helper: build layers from world tiles and run render pipeline ──────
-async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, currentEnemiesJson, trace, playerId) {
+async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, currentEnemiesJson, trace, playerId, playersJson) {
   let tilesDict;
   try { tilesDict = JSON.parse(tilesJsonStr || '{}'); } catch { tilesDict = {}; }
 
@@ -146,11 +146,27 @@ async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, c
 
   const layer10 = { layerType: 10, tilesJson: shadeResponse.tilesJson };
 
-  // Persist visible tiles into world-service's revealed set (per-player)
-  const revealResponse = await revealTilesAsync({
+  // Determine fog-of-war ID: in multiplayer (multiple players), use shared ID
+  let allPlayers = [];
+  try { allPlayers = JSON.parse(playersJson || '[]'); } catch {}
+  const isMultiplayer = allPlayers.length > 1;
+  const fowId = isMultiplayer ? 'multi-shared' : (playerId || 'default');
+
+  // Persist visible tiles: always save to player's own set AND shared set in multiplayer
+  await revealTilesAsync({
     visibleCoordsJson: shadeResponse.tilesJson,
     playerId: playerId || 'default'
   }, trace);
+
+  if (isMultiplayer) {
+    await revealTilesAsync({
+      visibleCoordsJson: shadeResponse.tilesJson,
+      playerId: 'multi-shared'
+    }, trace);
+  }
+
+  // Read revealed tiles from shared set (multiplayer) or player's own set (single)
+  const revealResponse = await getWorldStateAsync({ playerId: fowId }, trace);
 
   // Revealed layer (all tiles ever seen)
   const layer5 = { layerType: 5, tilesJson: revealResponse.revealedJson };
@@ -159,7 +175,8 @@ async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, c
   const renderResponse = await compositeLayersAsync({
     playerX: px,
     playerY: py,
-    layers: [layer0, layer5, layer10, layer20, layer30]
+    layers: [layer0, layer5, layer10, layer20, layer30],
+    playersJson: playersJson || '[]',
   }, trace);
 
   return {
@@ -256,7 +273,7 @@ async function exploreDoor(call, callback) {
       px, py,
       visualRange,
       call.request.currentEnemiesJson,
-      trace, heroId
+      trace, heroId, call.request.playersJson || '[]'
     );
 
     callback(null, {
@@ -344,7 +361,7 @@ async function computeMapModifiers(call, callback) {
       px, py,
       visualRange,
       call.request.currentEnemiesJson,
-      trace, heroId
+      trace, heroId, call.request.playersJson || '[]'
     );
 
     const responsePayload = {
@@ -567,7 +584,7 @@ async function processInput(call, callback) {
       px, py,
       visualRange,
       currentEnemiesJson,
-      trace, heroId
+      trace, heroId, call.request.playersJson || '[]'
     );
 
     callback(null, {

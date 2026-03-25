@@ -1,0 +1,12 @@
+{
+  "name": "@wow/multi-service",
+  "version": "1.0.0",
+  "description": "Multiplayer coordination service — tracks players, combines views",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@wow/proto": "*"
+  }
+}
