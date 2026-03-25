@@ -152,18 +152,16 @@ async function joinSession(call, callback) {
       spawnPositions = JSON.parse(gameState.spawnPositionsJson || '[]');
     }
 
-    // Assign spawn
-    const spawnIdx = nextSpawnIndex % Math.max(spawnPositions.length, 1);
-    const spawn = spawnPositions[spawnIdx] || { x: 0, y: 0 };
-    nextSpawnIndex++;
+    // All players start at (0,0) — center of the first room
+    const spawn = { x: 0, y: 0 };
 
-    // Create/reset hero at spawn
+    // Create/reset hero at shared spawn
     await resetHeroAsync({ heroId: playerId, name: name || 'Adventurer', heroClass: heroClass || 'Fighter' }, trace);
     await updatePositionAsync({ heroId: playerId, x: spawn.x, y: spawn.y }, trace);
 
-    sessions[playerId] = { name, color, active: true, lastSeen: Date.now(), spawnIndex: spawnIdx };
+    sessions[playerId] = { name, color, active: true, lastSeen: Date.now(), spawnIndex: 0 };
 
-    log.info(`[Multi] ${name} (${playerId}) joined at spawn ${spawnIdx} (${spawn.x},${spawn.y}) color=${color}`);
+    log.info(`[Multi] ${name} (${playerId}) joined at (${spawn.x},${spawn.y}) color=${color}`);
 
     callback(null, {
       success: true,

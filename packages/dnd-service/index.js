@@ -146,10 +146,10 @@ async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, c
 
   const layer10 = { layerType: 10, tilesJson: shadeResponse.tilesJson };
 
-  // Determine fog-of-war ID: in multiplayer (multiple players), use shared ID
+  // Determine fog-of-war ID: if playersJson has entries, it's a multiplayer session
   let allPlayers = [];
   try { allPlayers = JSON.parse(playersJson || '[]'); } catch {}
-  const isMultiplayer = allPlayers.length > 1;
+  const isMultiplayer = allPlayers.length > 0;
   const fowId = isMultiplayer ? 'multi-shared' : (playerId || 'default');
 
   // Persist visible tiles: always save to player's own set AND shared set in multiplayer
