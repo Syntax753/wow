@@ -82,6 +82,8 @@ export interface HeroState {
   wisdom: number;
   luck: number;
   armorClass: number;
+  positionX: number;
+  positionY: number;
 }
 
 // === Inventory ===

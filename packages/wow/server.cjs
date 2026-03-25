@@ -283,20 +283,32 @@ const server = http.createServer(async (req, res) => {
 
       const name = ghUser.login || 'Adventurer';
       const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 20);
-      const playerId = `gh-${slug}-${crypto.randomUUID().slice(0, 4)}`;
+      const playerId = `gh-${slug}`;
 
-      // Create hero for this player (no tracing needed for OAuth flow)
-      await grpcCall(heroClient, 'hero-service', 'resetHero', {
-        heroId: playerId,
-        name,
-        heroClass: 'Fighter',
-      }, null);
+      // Check if hero already exists for this GitHub user
+      let heroExists = false;
+      try {
+        await grpcCall(heroClient, 'hero-service', 'getHero', { heroId: playerId }, null);
+        heroExists = true;
+        log.info(`GitHub login (returning): ${name} (${playerId})`);
+      } catch {
+        // Hero doesn't exist — create a new one
+        await grpcCall(heroClient, 'hero-service', 'resetHero', {
+          heroId: playerId,
+          name,
+          heroClass: 'Fighter',
+        }, null);
+        log.info(`GitHub login (new): ${name} (${playerId})`);
+      }
 
-      players[playerId] = { name, heroId: playerId, active: false, lastSeen: Date.now(), spawnIndex: -1, color: assignColor() };
-      log.info(`GitHub login: ${name} (${playerId})`);
+      if (!players[playerId]) {
+        players[playerId] = { name, heroId: playerId, active: false, lastSeen: Date.now(), spawnIndex: -1, color: assignColor() };
+      } else {
+        players[playerId].lastSeen = Date.now();
+      }
 
-      // Set cookies and redirect to app
-      const maxAge = 86400;
+      // Set cookies and redirect to app (7 days)
+      const maxAge = 604800;
       res.writeHead(302, {
         Location: '/',
         'Set-Cookie': [
@@ -685,6 +697,17 @@ const server = http.createServer(async (req, res) => {
         level: 0,
         campaignId: body.campaignId || 'default',
       }, rootSpan);
+
+      // Move hero to spawn position
+      let spawnPositions = [];
+      try { spawnPositions = JSON.parse(gameRes.spawnPositionsJson || '[]'); } catch {}
+      if (spawnPositions.length > 0) {
+        await grpcCall(heroClient, 'hero-service', 'updatePosition', {
+          heroId: getPlayerId(req),
+          x: spawnPositions[0].x,
+          y: spawnPositions[0].y,
+        }, rootSpan);
+      }
 
       rootSpan.timeEnd = Date.now();
       json(res, 200, envelope(gameRes, [

@@ -6,6 +6,8 @@ export const TILE = {
   DOOR: '+',
   PLAYER: '@',
   CORRIDOR: ':',
+  STAIRS_UP: '<',
+  STAIRS_DOWN: '>',
   UNKNOWN: ' ',
 } as const;
 
@@ -283,6 +285,8 @@ export function getTileClass(ch: string): string {
     case TILE.DOOR: return 'ch-door';
     case TILE.PLAYER: return 'ch-player';
     case TILE.CORRIDOR: return 'ch-corridor';
+    case TILE.STAIRS_UP: return 'ch-stairs';
+    case TILE.STAIRS_DOWN: return 'ch-stairs';
     default: return 'ch-unknown';
   }
 }

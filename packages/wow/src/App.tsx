@@ -315,6 +315,13 @@ function App() {
       if (processing) return
 
       let key = e.key
+
+      // Arrow keys → numpad equivalents
+      const arrowMap: Record<string, string> = {
+        ArrowUp: '8', ArrowDown: '2', ArrowLeft: '4', ArrowRight: '6',
+      }
+      if (arrowMap[key]) key = arrowMap[key]
+
       let actionId = null
 
       for (const [id, def] of Object.entries(keymap)) {
@@ -513,6 +520,16 @@ function App() {
                   await startNewAdventure('default', playerName || 'Adventurer')
                   const heroRes = await getHero()
                   setHero(heroRes.data)
+                  // Set player position to spawn point from hero-service
+                  if (heroRes.data) {
+                    setGameState(prev => ({
+                      ...prev,
+                      player: {
+                        x: heroRes.data.positionX ?? prev.player.x,
+                        y: heroRes.data.positionY ?? prev.player.y,
+                      }
+                    }))
+                  }
                 } catch (err) {
                   console.error('New adventure error:', err)
                 }

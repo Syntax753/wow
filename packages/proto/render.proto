@@ -20,6 +20,7 @@ message TraceInfo {
 message MapLayer {
   int32 layer_type = 1;      // 0 = base, 10 = FOV, 20 = interactables
   string tiles_json = 2;     // A JSON string mapping coordinates to chars or states
+  string colors_json = 3;    // Optional: {"x,y": "#hexcolor"} tile colors for this layer
 }
 
 message CompositeLayersRequest {

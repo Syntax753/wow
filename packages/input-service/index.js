@@ -7,6 +7,8 @@ const PORT = process.env.INPUT_SERVICE_PORT || 50061;
 const TILE_WALL = '#';
 const TILE_FLOOR = '.';
 const TILE_DOOR = '+';
+const TILE_STAIRS_UP = '<';
+const TILE_STAIRS_DOWN = '>';
 const TILE_UNKNOWN = ' ';
 
 // Map keys to movement deltas
@@ -167,6 +169,52 @@ function processInput(call, callback) {
         positionChanged: false,
         trace
       });
+      return;
+    }
+
+    // '<' key — go up stairs
+    if (key === '<') {
+      const currentTile = getTile(px, py);
+      if (currentTile === TILE_STAIRS_UP) {
+        callback(null, {
+          newX: px, newY: py,
+          action: 'stairs_up',
+          message: 'You ascend the stairs...',
+          positionChanged: false,
+          trace
+        });
+      } else {
+        callback(null, {
+          newX: px, newY: py,
+          action: 'none',
+          message: 'There are no stairs here to go up.',
+          positionChanged: false,
+          trace
+        });
+      }
+      return;
+    }
+
+    // '>' key — go down stairs
+    if (key === '>') {
+      const currentTile = getTile(px, py);
+      if (currentTile === TILE_STAIRS_DOWN) {
+        callback(null, {
+          newX: px, newY: py,
+          action: 'stairs_down',
+          message: 'You descend the stairs...',
+          positionChanged: false,
+          trace
+        });
+      } else {
+        callback(null, {
+          newX: px, newY: py,
+          action: 'none',
+          message: 'There are no stairs here to go down.',
+          positionChanged: false,
+          trace
+        });
+      }
       return;
     }
 

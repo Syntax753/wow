@@ -106,7 +106,7 @@ const getKeymapAsync = makeAsyncCall(gameClient, 'GetKeymap', 'game-service');
 const getGameStateAsync = makeAsyncCall(gameClient, 'GetGameState', 'game-service');
 
 // ── Helper: build layers from world tiles and run render pipeline ──────
-async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, currentEnemiesJson, trace, playerId, playersJson) {
+async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, currentEnemiesJson, trace, playerId, playersJson, tileColorsJson) {
   let tilesDict;
   try { tilesDict = JSON.parse(tilesJsonStr || '{}'); } catch { tilesDict = {}; }
 
@@ -122,7 +122,7 @@ async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, c
     }
   }
 
-  const layer0 = { layerType: 0, tilesJson: JSON.stringify(baseMap) };
+  const layer0 = { layerType: 0, tilesJson: JSON.stringify(baseMap), colorsJson: tileColorsJson || '{}' };
   const layer20 = { layerType: 20, tilesJson: JSON.stringify(interactables) };
 
   // Enemy layer
@@ -273,7 +273,8 @@ async function exploreDoor(call, callback) {
       px, py,
       visualRange,
       call.request.currentEnemiesJson,
-      trace, heroId, call.request.playersJson || '[]'
+      trace, heroId, call.request.playersJson || '[]',
+      '{}'
     );
 
     callback(null, {
@@ -331,6 +332,7 @@ async function computeMapModifiers(call, callback) {
     const worldState = await getWorldStateAsync({ playerId: heroId }, trace);
     let tilesJsonStr = worldState.tilesJson || '{}';
     let roomsJsonStr = worldState.roomsJson || '[]';
+    let tileColorsJson = worldState.tileColorsJson || '{}';
 
     let tilesDict;
     try { tilesDict = JSON.parse(tilesJsonStr); } catch { tilesDict = {}; }
@@ -346,8 +348,15 @@ async function computeMapModifiers(call, callback) {
       const newWorldState = await getWorldStateAsync({ playerId: heroId }, trace);
       tilesJsonStr = newWorldState.tilesJson || '{}';
       roomsJsonStr = newWorldState.roomsJson || '[]';
-      px = 0; // The game-service places the start at 0,0
-      py = 0;
+      tileColorsJson = newWorldState.tileColorsJson || '{}';
+
+      // Get spawn position from game state
+      let spawnPositions = [];
+      try { spawnPositions = JSON.parse(gameRes.spawnPositionsJson || '[]'); } catch {}
+      if (spawnPositions.length > 0) {
+        px = spawnPositions[0].x;
+        py = spawnPositions[0].y;
+      }
 
       // Update hero with initial position
       await updatePositionAsync({ heroId, x: px, y: py }, trace);
@@ -361,7 +370,8 @@ async function computeMapModifiers(call, callback) {
       px, py,
       visualRange,
       call.request.currentEnemiesJson,
-      trace, heroId, call.request.playersJson || '[]'
+      trace, heroId, call.request.playersJson || '[]',
+      tileColorsJson
     );
 
     const responsePayload = {
@@ -412,6 +422,7 @@ async function processInput(call, callback) {
     const worldState = await getWorldStateAsync({ playerId: heroId }, trace);
     let tilesJsonStr = worldState.tilesJson || '{}';
     let roomsJsonStr = worldState.roomsJson || '[]';
+    const tileColorsJson = worldState.tileColorsJson || '{}';
 
     let tilesDict;
     try { tilesDict = JSON.parse(tilesJsonStr); } catch { tilesDict = {}; }
@@ -525,6 +536,21 @@ async function processInput(call, callback) {
       tilesJsonStr = setRes.tilesJson;
       roomsJsonStr = setRes.roomsJson;
 
+      // Check if BSP already placed a structure beyond this door
+      let tilesCheck;
+      try { tilesCheck = JSON.parse(tilesJsonStr); } catch { tilesCheck = {}; }
+      const adjacentFloor = [
+        tilesCheck[`${anchorX + 1},${anchorY}`],
+        tilesCheck[`${anchorX - 1},${anchorY}`],
+        tilesCheck[`${anchorX},${anchorY + 1}`],
+        tilesCheck[`${anchorX},${anchorY - 1}`],
+      ].filter(t => t === '.' || t === '+');
+
+      if (adjacentFloor.length >= 2) {
+        // Door leads to pre-generated BSP structure
+        message = 'You push the door open.';
+      } else {
+
       const typeRoll = await rollDiceAsync(['1d20'], trace);
       const score = typeRoll.grandTotal;
       const isRoom = score <= 8;
@@ -566,6 +592,7 @@ async function processInput(call, callback) {
       } else {
         message = 'The door opens to solid rock...';
       }
+      } // end else (on-demand generation fallback)
     }
 
     // 6b. If close_door, convert adjacent floor back to door
@@ -584,7 +611,8 @@ async function processInput(call, callback) {
       px, py,
       visualRange,
       currentEnemiesJson,
-      trace, heroId, call.request.playersJson || '[]'
+      trace, heroId, call.request.playersJson || '[]',
+      tileColorsJson
     );
 
     callback(null, {

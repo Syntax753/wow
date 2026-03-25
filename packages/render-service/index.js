@@ -61,6 +61,19 @@ async function compositeLayers(call, callback) {
             mapGrid[localY][localX].char = char;
           }
         }
+        // Apply tile colors if provided
+        if (layer.colorsJson) {
+          let colors;
+          try { colors = JSON.parse(layer.colorsJson); } catch { colors = {}; }
+          for (const [coord, color] of Object.entries(colors)) {
+            const [cx, cy] = coord.split(',').map(Number);
+            const localX = cx - minX;
+            const localY = cy - minY;
+            if (localX >= 0 && localX < viewportWidth && localY >= 0 && localY < viewportHeight) {
+              mapGrid[localY][localX].color = color;
+            }
+          }
+        }
       } else if (layer.layerType === 5) {
         // Revealed Layer — tiles the player has ever seen (parsed is array of "x,y" strings)
         for (const coord of parsed) {

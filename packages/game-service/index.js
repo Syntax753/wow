@@ -2,18 +2,14 @@ const grpc = require('@grpc/grpc-js');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { GameService, WorldService, RoomService, DiceService, createLogger } = require('@wow/proto');
+const { GameService, WorldService, createLogger } = require('@wow/proto');
 
 const log = createLogger('GameService');
 
 const PORT = process.env.GAME_SERVICE_PORT || 50062;
 const WORLD_SERVICE_URL = process.env.WORLD_SERVICE_URL || 'localhost:50060';
-const ROOM_SERVICE_URL = process.env.ROOM_SERVICE_URL || 'localhost:50056';
-const DICE_SERVICE_URL = process.env.DICE_SERVICE_URL || 'localhost:50051';
 
 const worldClient = new WorldService(WORLD_SERVICE_URL, grpc.credentials.createInsecure());
-const roomClient = new RoomService(ROOM_SERVICE_URL, grpc.credentials.createInsecure());
-const diceClient = new DiceService(DICE_SERVICE_URL, grpc.credentials.createInsecure());
 
 const KEYMAP_PATH = path.join(__dirname, '../../data/keymap.json');
 const CAMPAIGNS_DIR = path.join(__dirname, '../../data/campaigns');
@@ -88,13 +84,7 @@ function makeAsyncCall(client, method, serviceName) {
   };
 }
 
-const rollDiceAsync = makeAsyncCall(diceClient, 'RollDice', 'dice-service');
-const resetWorldAsync = makeAsyncCall(worldClient, 'ResetWorld', 'world-service');
-const initWorldAsync = makeAsyncCall(worldClient, 'InitWorld', 'world-service');
-const placeStructureAsync = makeAsyncCall(worldClient, 'PlaceStructure', 'world-service');
-const generateRoomAsync = makeAsyncCall(roomClient, 'GenerateRoom', 'room-service');
-const generateCorridorAsync = makeAsyncCall(roomClient, 'GenerateCorridor', 'room-service');
-const setTileAsync = makeAsyncCall(worldClient, 'SetTile', 'world-service');
+const generateLevelAsync = makeAsyncCall(worldClient, 'GenerateLevel', 'world-service');
 
 // ── Campaign loading ─────────────────────────────────────────────────
 
@@ -105,7 +95,7 @@ function loadCampaign(campaignId) {
 
 function getLevelConfig(campaign, level) {
   if (!campaign.levels || !Array.isArray(campaign.levels)) {
-    return { maxDimensionX: 100, maxDimensionY: 100, maxRooms: 15, maxEnemies: 10, difficulty: 1 };
+    return { width: 80, height: 50, maxRooms: 12, maxEnemies: 10, difficulty: 1, regions: [] };
   }
   const idx = Math.min(level, campaign.levels.length - 1);
   return campaign.levels[idx];
@@ -216,138 +206,8 @@ function updateSettings(call, callback) {
   }
 }
 
-// ── Graph-based level generation ─────────────────────────────────────
-// Door distribution: 1 door 10%, 2 doors 70%, 3+ doors 20%
-// Every door = one edge = one connection to another room.
-
-function rollDoorCount() {
-  const r = Math.random() * 100;
-  if (r < 10) return 1;          // 10%
-  if (r < 80) return 2;          // 70%
-  if (r < 95) return 3;          // 15%
-  return 4;                      // 5%
-}
-
-// Build a connected node graph where rooms are nodes and edges are door connections.
-// Key invariant: each node's final door count == number of edges it participates in.
-// 1. Roll initial door counts via distribution
-// 2. Build a spanning tree for guaranteed connectivity (adjusting counts as needed)
-// 3. Fill remaining door slots with extra edges
-// 4. Trim any leftover unmatched door slots so doors == edges
-function buildRoomGraph(numRooms) {
-  const nodes = [];
-  for (let i = 0; i < numRooms; i++) {
-    const doorCount = rollDoorCount();
-    nodes.push({ id: i, doorCount, edges: [] });
-  }
-
-  // Ensure first room (spawn) has at least 2 exits
-  if (nodes[0].doorCount < 2) nodes[0].doorCount = 2;
-
-  const edges = [];
-  const edgeSet = new Set();
-
-  function addEdge(a, b) {
-    const key = `${Math.min(a,b)}-${Math.max(a,b)}`;
-    if (edgeSet.has(key)) return false;
-    edgeSet.add(key);
-    edges.push([a, b]);
-    nodes[a].edges.push(b);
-    nodes[b].edges.push(a);
-    return true;
-  }
-
-  // Step 1: Build spanning tree — every node reachable from node 0
-  const remaining = [];
-  for (let i = 1; i < numRooms; i++) remaining.push(i);
-  // Fisher-Yates shuffle for organic layout
-  for (let i = remaining.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [remaining[i], remaining[j]] = [remaining[j], remaining[i]];
-  }
-
-  const inTree = new Set([0]);
-  for (const nodeId of remaining) {
-    // Pick a random tree node with spare door slots
-    let candidates = [...inTree].filter(id => nodes[id].edges.length < nodes[id].doorCount);
-    if (candidates.length === 0) {
-      // All full — force-expand a random tree node
-      const forced = [...inTree][Math.floor(Math.random() * inTree.size)];
-      nodes[forced].doorCount++;
-      candidates = [forced];
-    }
-    // Also ensure the new node has capacity (it needs at least 1 door for this edge)
-    if (nodes[nodeId].doorCount < 1) nodes[nodeId].doorCount = 1;
-
-    const parent = candidates[Math.floor(Math.random() * candidates.length)];
-    addEdge(parent, nodeId);
-    inTree.add(nodeId);
-  }
-
-  // Step 2: Fill remaining door slots with extra edges (loops/shortcuts)
-  for (let i = 0; i < numRooms; i++) {
-    while (nodes[i].edges.length < nodes[i].doorCount) {
-      const candidates = [];
-      for (let j = 0; j < numRooms; j++) {
-        if (j === i) continue;
-        if (nodes[j].edges.length >= nodes[j].doorCount) continue;
-        const key = `${Math.min(i,j)}-${Math.max(i,j)}`;
-        if (edgeSet.has(key)) continue;
-        candidates.push(j);
-      }
-      if (candidates.length > 0) {
-        const partner = candidates[Math.floor(Math.random() * candidates.length)];
-        addEdge(i, partner);
-      } else {
-        break; // No valid partners
-      }
-    }
-  }
-
-  // Step 3: Trim door counts to match actual edge count (doors == edges, always)
-  for (const node of nodes) {
-    node.doorCount = node.edges.length;
-  }
-
-  return { nodes, edges };
-}
-
-// Print the level graph in a human-readable format (info level)
-function printGraph(graph, roomData) {
-  log.info('');
-  log.info('┌──────────────────────────────────────────────────────────');
-  log.info('│ LEVEL GRAPH');
-  log.info('├──────────────────────────────────────────────────────────');
-
-  for (const node of graph.nodes) {
-    const neighbors = node.edges.map(n => `R${n}`).join(', ');
-    const placed = roomData && roomData[node.id] ? (roomData[node.id].placed ? '  ✓' : '  ✗') : '';
-    const dims = roomData && roomData[node.id]
-      ? ` (${roomData[node.id].width}x${roomData[node.id].height})`
-      : '';
-    log.info(`│  R${node.id} [${node.doorCount} doors]${dims}${placed} → ${neighbors}`);
-  }
-
-  log.info('├──────────────────────────────────────────────────────────');
-  log.info(`│ Rooms: ${graph.nodes.length}  Edges: ${graph.edges.length}`);
-
-  const dist = { 1: 0, 2: 0, 3: 0, '4+': 0 };
-  for (const n of graph.nodes) {
-    if (n.doorCount >= 4) dist['4+']++;
-    else dist[n.doorCount]++;
-  }
-  log.info(`│ Distribution: 1-door=${dist[1]}  2-door=${dist[2]}  3-door=${dist[3]}  4+-door=${dist['4+']}`);
-
-  log.info('│ Edges: ' + graph.edges.map(([a, b]) => `R${a}↔R${b}`).join('  '));
-  log.info('└──────────────────────────────────────────────────────────');
-  log.info('');
-}
-
 // ── RPC: StartGame ───────────────────────────────────────────────────
-// Generates a level using graph-based room placement:
-// 1. Build a room graph (nodes=rooms, edges=door connections)
-// 2. Generate each room via room-service with specified door count
-// 3. Place rooms via world-service, connecting edges with corridors
+// Delegates level generation to world-service's BSP-based GenerateLevel.
 
 async function startGame(call, callback) {
   const trace = {
@@ -369,6 +229,26 @@ async function startGame(call, callback) {
 
     log.info(`[GameService] Starting campaign "${campaign.name}" level ${level}: "${levelConfig.name}"`);
 
+    const maxPlayers = call.request.maxPlayers || 4;
+    const difficulty = levelConfig.difficulty || (level + 1);
+
+    // Delegate level generation to world-service BSP
+    const mapType = levelConfig.mapType || 'dungeon';
+    const levelRes = await generateLevelAsync({
+      width: levelConfig.width || 0,   // 0 = use MapType default
+      height: levelConfig.height || 0,
+      requiredRooms: levelConfig.maxRooms || 0,
+      difficulty,
+      minRoomSize: 0,  // 0 = use MapType default
+      maxRoomSize: 0,
+      maxPlayers,
+      gridSize: 2,
+      regionsJson: JSON.stringify(levelConfig.regions || []),
+      mapType,
+    }, trace);
+
+    const spawnPositions = JSON.parse(levelRes.spawnPositionsJson || '[]');
+
     // Update game state
     gameState = {
       campaignId,
@@ -376,220 +256,10 @@ async function startGame(call, callback) {
       levelName: levelConfig.name || `Level ${level}`,
       totalLevels: campaign.levels ? campaign.levels.length : 1,
       started: true,
+      spawnPositions,
     };
 
-    // 1. Reset World
-    await resetWorldAsync({}, trace);
-
-    const maxPlayers = call.request.maxPlayers || 4;
-    const numRooms = Math.max(levelConfig.maxRooms || 10, maxPlayers); // at least 1 room per player
-    const difficulty = levelConfig.difficulty || (level + 1);
-
-    // 2. Build room graph (doors == edges for every node)
-    // First maxPlayers rooms are spawn rooms (one per potential player)
-    const graph = buildRoomGraph(numRooms);
-
-    // Ensure spawn rooms (first maxPlayers nodes) have at least 2 doors for connectivity
-    for (let i = 0; i < Math.min(maxPlayers, graph.nodes.length); i++) {
-      if (graph.nodes[i].doorCount < 2) graph.nodes[i].doorCount = 2;
-    }
-
-    // 3. Generate all rooms via room-service with exact door counts
-    const roomData = [];
-    for (const node of graph.nodes) {
-      const genRoom = await generateRoomAsync({
-        level: difficulty,
-        doorCount: node.doorCount
-      }, trace);
-      roomData.push({
-        id: node.id,
-        width: genRoom.width,
-        height: genRoom.height,
-        description: genRoom.description,
-        doors: genRoom.doors || [],
-        tilesJson: genRoom.tilesJson || '{}',
-        placed: false,
-        worldX: 0,
-        worldY: 0,
-      });
-    }
-
-    // Print initial graph (before placement)
-    log.info('[GameService] === GRAPH BUILT ===');
-    printGraph(graph, roomData);
-
-    // 4. Place rooms using graph layout
-    const room0 = roomData[0];
-    const initRes = await initWorldAsync({
-      width: room0.width,
-      height: room0.height,
-      description: room0.description,
-      tilesJson: room0.tilesJson,
-      doors: room0.doors
-    }, trace);
-    room0.placed = true;
-    room0.worldX = 0;
-    room0.worldY = 0;
-    log.info(`[GameService] Placed R0 (spawn) at (0,0) ${room0.width}x${room0.height}`);
-
-    let roomsPlaced = 1;
-    const halfX = (levelConfig.maxDimensionX || 100) / 2;
-    const halfY = (levelConfig.maxDimensionY || 100) / 2;
-
-    const edgeQueue = [];
-    const processedEdges = new Set();
-    enqueueEdgesForRoom(0, graph.edges, edgeQueue, processedEdges);
-
-    const maxPlacementAttempts = numRooms * 5;
-    let placementAttempts = 0;
-
-    while (edgeQueue.length > 0 && placementAttempts < maxPlacementAttempts) {
-      placementAttempts++;
-      const [a, b] = edgeQueue.shift();
-      const edgeKey = `${Math.min(a,b)}-${Math.max(a,b)}`;
-      if (processedEdges.has(edgeKey)) continue;
-      processedEdges.add(edgeKey);
-
-      const placedId = roomData[a].placed ? a : (roomData[b].placed ? b : -1);
-      const unplacedId = placedId === a ? b : a;
-
-      if (placedId === -1) {
-        edgeQueue.push([a, b]);
-        processedEdges.delete(edgeKey);
-        continue;
-      }
-
-      if (roomData[unplacedId].placed) {
-        log.debug(`[GameService] Edge R${a}↔R${b}: both placed, adding corridor`);
-        await connectRoomsWithCorridor(roomData[placedId], roomData[unplacedId], difficulty, trace);
-        continue;
-      }
-
-      const placedRoom = roomData[placedId];
-      const newRoom = roomData[unplacedId];
-      const placedDoorLocal = pickAvailableDoor(placedRoom);
-      if (!placedDoorLocal) {
-        log.debug(`[GameService] Edge R${placedId}↔R${unplacedId}: no available door on R${placedId}, skipping`);
-        continue;
-      }
-
-      const anchorX = placedRoom.worldX + placedDoorLocal.x;
-      const anchorY = placedRoom.worldY + placedDoorLocal.y;
-
-      if (Math.abs(anchorX) > halfX - 15 || Math.abs(anchorY) > halfY - 15) {
-        log.debug(`[GameService] Edge R${placedId}↔R${unplacedId}: out of bounds at (${anchorX},${anchorY})`);
-        continue;
-      }
-
-      const corrRes = await generateCorridorAsync({ level: difficulty }, trace);
-      const isVertical = corrRes.direction === 'N' || corrRes.direction === 'S';
-      const corrWidth = isVertical ? 3 : corrRes.length;
-      const corrHeight = isVertical ? corrRes.length : 3;
-
-      const corrPlaceRes = await placeStructureAsync({
-        structureType: 'corridor',
-        width: corrWidth,
-        height: corrHeight,
-        description: corrRes.description,
-        tilesJson: corrRes.tilesJson || '{}',
-        doors: [],
-        anchorX, anchorY,
-        direction: corrRes.direction
-      }, trace);
-
-      if (!corrPlaceRes.fitSuccess) {
-        const placeRes = await placeStructureAsync({
-          structureType: 'room',
-          width: newRoom.width,
-          height: newRoom.height,
-          description: newRoom.description,
-          tilesJson: newRoom.tilesJson,
-          doors: newRoom.doors,
-          anchorX, anchorY,
-          direction: ''
-        }, trace);
-
-        if (placeRes.fitSuccess) {
-          newRoom.placed = true;
-          newRoom.worldX = placeRes.originX || anchorX;
-          newRoom.worldY = placeRes.originY || anchorY;
-          roomsPlaced++;
-          log.debug(`[GameService] Edge R${placedId}↔R${unplacedId}: placed R${unplacedId} directly at (${newRoom.worldX},${newRoom.worldY})`);
-          enqueueEdgesForRoom(unplacedId, graph.edges, edgeQueue, processedEdges);
-        } else {
-          log.debug(`[GameService] Edge R${placedId}↔R${unplacedId}: FAILED to place (corridor+room both blocked)`);
-        }
-        continue;
-      }
-
-      // Compute the corridor's far end from direction + length (no tile scanning)
-      const actualDir = corrPlaceRes.actualDirection || corrRes.direction;
-      const corrLength = Math.max(corrWidth, corrHeight);
-      let corridorEnd = null;
-
-      if (actualDir === 'N') {
-        corridorEnd = { x: anchorX, y: anchorY - (corrLength - 1) };
-      } else if (actualDir === 'S') {
-        corridorEnd = { x: anchorX, y: anchorY + (corrLength - 1) };
-      } else if (actualDir === 'E') {
-        corridorEnd = { x: anchorX + (corrLength - 1), y: anchorY };
-      } else if (actualDir === 'W') {
-        corridorEnd = { x: anchorX - (corrLength - 1), y: anchorY };
-      }
-
-      if (corridorEnd) {
-        const placeRes = await placeStructureAsync({
-          structureType: 'room',
-          width: newRoom.width,
-          height: newRoom.height,
-          description: newRoom.description,
-          tilesJson: newRoom.tilesJson,
-          doors: newRoom.doors,
-          anchorX: corridorEnd.x,
-          anchorY: corridorEnd.y,
-          direction: ''
-        }, trace);
-
-        if (placeRes.fitSuccess) {
-          newRoom.placed = true;
-          newRoom.worldX = placeRes.originX || corridorEnd.x;
-          newRoom.worldY = placeRes.originY || corridorEnd.y;
-          roomsPlaced++;
-          log.debug(`[GameService] Edge R${placedId}↔R${unplacedId}: placed R${unplacedId} via corridor at (${newRoom.worldX},${newRoom.worldY})`);
-          enqueueEdgesForRoom(unplacedId, graph.edges, edgeQueue, processedEdges);
-        } else {
-          log.debug(`[GameService] Edge R${placedId}↔R${unplacedId}: corridor placed but R${unplacedId} didn't fit`);
-        }
-      }
-    }
-
-    // Build spawn positions from the first maxPlayers placed rooms
-    const spawnPositions = [];
-    for (let i = 0; i < Math.min(maxPlayers, roomData.length); i++) {
-      const rd = roomData[i];
-      if (rd.placed) {
-        // Spawn at the center of the room
-        const cx = rd.worldX + Math.floor(rd.width / 2);
-        const cy = rd.worldY + Math.floor(rd.height / 2);
-        spawnPositions.push({ x: cx, y: cy });
-      }
-    }
-    // Fallback: if fewer rooms placed than maxPlayers, fill with (0,0)
-    while (spawnPositions.length < maxPlayers) {
-      spawnPositions.push({ x: 0, y: 0 });
-    }
-
-    gameState.spawnPositions = spawnPositions;
-
-    // Print final placement results
-    log.info('[GameService] === PLACEMENT RESULTS ===');
-    printGraph(graph, roomData);
-    for (const rd of roomData) {
-      const status = rd.placed ? `placed at (${rd.worldX},${rd.worldY})` : 'NOT PLACED';
-      log.info(`[GameService]   R${rd.id}: ${rd.width}x${rd.height}, ${rd.doors.length} doors — ${status}`);
-    }
-    log.info(`[GameService] Spawn positions: ${JSON.stringify(spawnPositions)}`);
-    log.info(`[GameService] Map generation complete. Rooms placed: ${roomsPlaced}/${numRooms}, Attempts: ${placementAttempts}`);
+    log.info(`[GameService] Level generated via BSP. Spawns: ${JSON.stringify(spawnPositions)}`);
 
     callback(null, {
       success: true,
@@ -603,57 +273,6 @@ async function startGame(call, callback) {
     log.error('Error starting game:', err.message);
     callback(err);
   }
-}
-
-// Pick a door from a room that hasn't been used for a connection yet
-function pickAvailableDoor(room) {
-  if (!room.doors || room.doors.length === 0) return null;
-  if (!room._usedDoorIndices) room._usedDoorIndices = new Set();
-
-  for (let i = 0; i < room.doors.length; i++) {
-    if (!room._usedDoorIndices.has(i)) {
-      room._usedDoorIndices.add(i);
-      return room.doors[i];
-    }
-  }
-  // All doors used — reuse a random one (corridor will branch from it)
-  return room.doors[Math.floor(Math.random() * room.doors.length)];
-}
-
-// Add edges for a newly-placed room to the processing queue
-function enqueueEdgesForRoom(roomId, allEdges, queue, processedEdges) {
-  for (const [a, b] of allEdges) {
-    if (a === roomId || b === roomId) {
-      const key = `${Math.min(a,b)}-${Math.max(a,b)}`;
-      if (!processedEdges.has(key)) {
-        queue.push([a, b]);
-      }
-    }
-  }
-}
-
-// Connect two already-placed rooms by carving an L-shaped floor path between doors
-async function connectRoomsWithCorridor(roomA, roomB, difficulty, trace) {
-  const doorA = pickAvailableDoor(roomA);
-  const doorB = pickAvailableDoor(roomB);
-  if (!doorA || !doorB) return;
-
-  const ax = roomA.worldX + doorA.x;
-  const ay = roomA.worldY + doorA.y;
-  const bx = roomB.worldX + doorB.x;
-  const by = roomB.worldY + doorB.y;
-
-  // Carve L-shaped path: horizontal from A to B's column, then vertical to B's row
-  const stepX = bx >= ax ? 1 : -1;
-  for (let x = ax; x !== bx + stepX; x += stepX) {
-    await setTileAsync({ x, y: ay, tileChar: '.' }, trace);
-  }
-  const stepY = by >= ay ? 1 : -1;
-  for (let y = ay; y !== by + stepY; y += stepY) {
-    await setTileAsync({ x: bx, y, tileChar: '.' }, trace);
-  }
-
-  log.debug(`[GameService] Connected R${roomA.id}↔R${roomB.id} via L-path (${ax},${ay})→(${bx},${by})`);
 }
 
 // ── Server bootstrap ─────────────────────────────────────────────────

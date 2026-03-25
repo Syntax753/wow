@@ -177,6 +177,7 @@ body {
 .ch-door { color: var(--terminal-yellow); text-shadow: 0 0 8px var(--terminal-glow); }
 .ch-player { color: #22c55e; font-weight: bold; text-shadow: 0 0 12px rgba(34, 197, 94, 0.6); }
 .ch-corridor { color: #4b5563; }
+.ch-stairs { color: #e5e7eb; font-weight: bold; text-shadow: 0 0 8px rgba(229, 231, 235, 0.4); }
 .ch-unknown { color: #1f2937; }
 
 .visible-bright {
