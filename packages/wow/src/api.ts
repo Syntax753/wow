@@ -298,12 +298,12 @@ export const computeMapModifiers = (worldState: WorldStatePayload, visualRange =
   post<ComputeMapModifiersResponse>('/dnd/map-modifiers', { ...worldState, visualRange });
 
 // Sync (Unified Game Turn loop) — world-service owns tile state
-export const syncTurn = (playerX: number, playerY: number, currentEnemiesJson = '[]', visualRange = 8, level = 1) =>
-  post<GameSyncResponse>('/sync', { playerX, playerY, currentEnemiesJson, visualRange, level });
+export const syncTurn = (playerX: number, playerY: number, currentEnemiesJson = '[]', visualRange = 8, level = 1, viewportWidth = 0, viewportHeight = 0) =>
+  post<GameSyncResponse>('/sync', { playerX, playerY, currentEnemiesJson, visualRange, level, viewportWidth, viewportHeight });
 
 // Input — unified keypress handler (movement, actions, door exploration)
-export const sendInput = (key: string, currentEnemiesJson = '[]', visualRange = 8, level = 1) =>
-  post<InputResponse>('/input', { key, currentEnemiesJson, visualRange, level });
+export const sendInput = (key: string, currentEnemiesJson = '[]', visualRange = 8, level = 1, viewportWidth = 0, viewportHeight = 0) =>
+  post<InputResponse>('/input', { key, currentEnemiesJson, visualRange, level, viewportWidth, viewportHeight });
 
 // Config
 export const getKeymap = () => get<GetKeymapResponse>('/config/keymap');
@@ -342,7 +342,7 @@ export const logout = () => post<{ success: boolean }>('/auth/logout', {});
 export const login = (name: string, heroClass = 'Fighter') =>
   post<{ playerId: string; name: string }>('/login', { name, heroClass });
 export const getPlayers = () =>
-  get<{ players: Array<{ playerId: string; name: string }> }>('/players');
+  get<{ players: Array<{ playerId: string; name: string; positionX?: number; positionY?: number }> }>('/players');
 export const joinGame = (heroClass = 'Fighter') =>
   post<GameStateResponse & { spawnX?: number; spawnY?: number }>('/game/join', { heroClass });
 export const leaveGame = () =>

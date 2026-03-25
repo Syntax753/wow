@@ -515,6 +515,8 @@ const server = http.createServer(async (req, res) => {
           visualRange: body.visualRange || 8,
           currentEnemiesJson: body.currentEnemiesJson || '[]',
           level: body.level || 1,
+          viewportWidth: body.viewportWidth || 0,
+          viewportHeight: body.viewportHeight || 0,
         }, rootSpan);
       } else {
         const playersJson = await getActivePlayersJson(rootSpan);
@@ -525,6 +527,8 @@ const server = http.createServer(async (req, res) => {
           level: body.level || 1,
           heroId: pid,
           playersJson,
+          viewportWidth: body.viewportWidth || 0,
+          viewportHeight: body.viewportHeight || 0,
         }, rootSpan);
       }
 
@@ -579,6 +583,8 @@ const server = http.createServer(async (req, res) => {
           playerY: body.playerY || 0,
           visualRange: body.visualRange || 8,
           currentEnemiesJson: body.currentEnemiesJson || '[]',
+          viewportWidth: body.viewportWidth || 0,
+          viewportHeight: body.viewportHeight || 0,
         }, rootSpan);
       } else {
         const playersJson = await getActivePlayersJson(rootSpan);
@@ -590,6 +596,8 @@ const server = http.createServer(async (req, res) => {
           currentEnemiesJson: body.currentEnemiesJson || "[]",
           heroId: pid,
           playersJson,
+          viewportWidth: body.viewportWidth || 0,
+          viewportHeight: body.viewportHeight || 0,
         }, rootSpan);
       }
 
@@ -631,8 +639,17 @@ const server = http.createServer(async (req, res) => {
       ], rootSpan));
 
     } else if (req.url === '/api/players' && req.method === 'GET') {
+      const playerList = [];
+      for (const [id, p] of Object.entries(players)) {
+        const entry = { playerId: id, name: p.name };
+        try {
+          const hero = await grpcCall(heroClient, 'hero-service', 'getHero', { heroId: id }, rootSpan);
+          entry.positionX = hero.positionX;
+          entry.positionY = hero.positionY;
+        } catch { /* hero may not exist yet */ }
+        playerList.push(entry);
+      }
       rootSpan.timeEnd = Date.now();
-      const playerList = Object.entries(players).map(([id, p]) => ({ playerId: id, name: p.name }));
       json(res, 200, envelope({ players: playerList }, [], rootSpan));
 
     } else if (req.url === '/api/game/join' && req.method === 'POST') {

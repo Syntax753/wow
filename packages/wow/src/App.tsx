@@ -15,6 +15,7 @@ import {
   getKeymap,
   getCampaign,
   getGameState,
+  getPlayers,
   startNewAdventure,
   logout,
   joinGame,
@@ -55,8 +56,24 @@ function App() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [authProvider, setAuthProvider] = useState<'github' | 'guest' | null>(null)
 
+  // Zoom system
+  const [zoomMode, setZoomMode] = useState<'fixed' | 'dynamic' | 'adaptive'>('dynamic')
+  const [mapZoom, setMapZoom] = useState(60) // viewport width in tiles
+  const [targetZoom, setTargetZoom] = useState(60)
+  const zoomRef = useRef(60)
+  const MIN_ZOOM = 20
+  const MAX_ZOOM = 160
+  const ZOOM_STEP = 10
+  const ZOOM_ASPECT = 4 // width:height ratio (60:15 = 4:1)
+
   // Multi-layered visual state orchestrator
   const [mapGrid, setMapGrid] = useState<Tile[][]>([])
+
+  // Compute viewport tile dimensions from zoom level
+  const getViewport = useCallback((zoom: number) => ({
+    w: Math.round(zoom),
+    h: Math.round(zoom / ZOOM_ASPECT),
+  }), [])
 
   // Track whether initial sync has completed
   const initialSyncDone = useRef(false)
@@ -118,6 +135,19 @@ function App() {
     return () => { cancelled = true; clearInterval(interval) }
   }, [])
 
+  // Smooth zoom animation
+  useEffect(() => {
+    if (mapZoom === targetZoom) return
+    const animFrame = requestAnimationFrame(() => {
+      const diff = targetZoom - mapZoom
+      const step = Math.sign(diff) * Math.min(Math.abs(diff), Math.max(2, Math.abs(diff) * 0.3))
+      const next = Math.abs(diff) < 2 ? targetZoom : mapZoom + step
+      setMapZoom(next)
+      zoomRef.current = next
+    })
+    return () => cancelAnimationFrame(animFrame)
+  }, [mapZoom, targetZoom])
+
   // Load configuration
   useEffect(() => {
     if (serviceStatus !== 'online') return
@@ -126,6 +156,17 @@ function App() {
       const campData = JSON.parse((campRes.data as any).campaignJson || '{}')
       setDefaultKeymap(defaults)
       setCampaigns([campData])
+
+      // Load zoom config from first level (will be updated on level change)
+      if (campData.levels && campData.levels[0]) {
+        const lvl = campData.levels[0]
+        if (lvl.zoomMode) setZoomMode(lvl.zoomMode)
+        if (lvl.mapZoom) {
+          setMapZoom(lvl.mapZoom)
+          setTargetZoom(lvl.mapZoom)
+          zoomRef.current = lvl.mapZoom
+        }
+      }
 
       const cookieMatch = document.cookie.match(/(?:^|; )wow_settings=([^;]*)/)
       let overrides = {}
@@ -147,7 +188,8 @@ function App() {
     initialSyncDone.current = true
 
     const ws = serializeWorldState(gameState)
-    syncTurn(ws.playerX, ws.playerY, ws.currentEnemiesJson, 8, ws.level)
+    const vp = getViewport(zoomRef.current)
+    syncTurn(ws.playerX, ws.playerY, ws.currentEnemiesJson, 8, ws.level, vp.w, vp.h)
       .then(async (res) => {
         applyOverlay(res.data.actions || null)
 
@@ -185,6 +227,52 @@ function App() {
       })
   }, [serviceStatus, screen])
 
+  // Re-sync map when zoom animation finishes
+  const prevZoomRef = useRef(mapZoom)
+  useEffect(() => {
+    if (screen !== 'game' || serviceStatus !== 'online' || !initialSyncDone.current) return
+    if (mapZoom === targetZoom && prevZoomRef.current !== mapZoom) {
+      prevZoomRef.current = mapZoom
+      const ws = serializeWorldState(gameStateRef.current)
+      const vp = getViewport(mapZoom)
+      syncTurn(ws.playerX, ws.playerY, ws.currentEnemiesJson, 8, ws.level, vp.w, vp.h)
+        .then(res => {
+          const mapData = res.data.map
+          if (mapData?.merged_tiles_json) setMapGrid(JSON.parse(mapData.merged_tiles_json))
+        })
+        .catch(() => {})
+    }
+  }, [mapZoom, targetZoom, screen, serviceStatus, getViewport])
+
+  // Adaptive zoom — auto-adjust viewport to contain all players within 80%
+  useEffect(() => {
+    if (screen !== 'game' || zoomMode !== 'adaptive' || serviceStatus !== 'online') return
+    const interval = setInterval(async () => {
+      try {
+        const res = await getPlayers()
+        const positions = (res.data.players || [])
+          .filter((p: any) => p.positionX !== undefined && p.positionY !== undefined)
+        if (positions.length < 2) return // single player, keep default zoom
+
+        const xs = positions.map((p: any) => p.positionX)
+        const ys = positions.map((p: any) => p.positionY)
+        const spanX = Math.max(...xs) - Math.min(...xs)
+        const spanY = Math.max(...ys) - Math.min(...ys)
+
+        // 80% viewport means we need spanX / 0.8 width, spanY / 0.8 height
+        const neededW = Math.ceil(spanX / 0.8) + 10 // padding
+        const neededH = Math.ceil(spanY / 0.8) + 4
+        // Pick the larger constraint, maintaining aspect ratio
+        const zoomFromW = neededW
+        const zoomFromH = neededH * ZOOM_ASPECT
+        const needed = Math.max(zoomFromW, zoomFromH, MIN_ZOOM)
+        const clamped = Math.min(Math.max(needed, MIN_ZOOM), MAX_ZOOM)
+        setTargetZoom(clamped)
+      } catch { /* ignore */ }
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [screen, zoomMode, serviceStatus])
+
   // Multiplayer polling — refresh map every 2s to see other players move
   const gameStateRef = useRef(gameState)
   gameStateRef.current = gameState
@@ -194,7 +282,8 @@ function App() {
     const interval = setInterval(async () => {
       try {
         const ws = serializeWorldState(gameStateRef.current)
-        const res = await syncTurn(ws.playerX, ws.playerY, ws.currentEnemiesJson, 8, ws.level)
+        const vp = getViewport(zoomRef.current)
+        const res = await syncTurn(ws.playerX, ws.playerY, ws.currentEnemiesJson, 8, ws.level, vp.w, vp.h)
         const mapData = res.data.map
         if (mapData?.merged_tiles_json) {
           setMapGrid(JSON.parse(mapData.merged_tiles_json))
@@ -254,7 +343,8 @@ function App() {
     setProcessing(true)
     try {
       const ws = serializeWorldState(gameState)
-      const res = await sendInput(key, ws.currentEnemiesJson, 8, ws.level)
+      const vp = getViewport(zoomRef.current)
+      const res = await sendInput(key, ws.currentEnemiesJson, 8, ws.level, vp.w, vp.h)
       const data = res.data
 
       appendServiceLogs(res.logEntries)
@@ -342,6 +432,19 @@ function App() {
         return
       }
 
+      // Intercept zoom actions — handle client-side (only in dynamic mode)
+      if (actionId === 'zoomIn' || actionId === 'zoomOut') {
+        e.preventDefault()
+        if (zoomMode !== 'dynamic') return
+        setTargetZoom(prev => {
+          const next = actionId === 'zoomIn'
+            ? Math.max(MIN_ZOOM, prev - ZOOM_STEP)
+            : Math.min(MAX_ZOOM, prev + ZOOM_STEP)
+          return next
+        })
+        return
+      }
+
       if (actionId) {
         e.preventDefault()
         // Send the default key backwards to backend
@@ -354,7 +457,7 @@ function App() {
       window.addEventListener('keydown', handleKeyDown)
     }
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleInput, screen, keymap, defaultKeymap, processing, serviceStatus, showInventory])
+  }, [handleInput, screen, keymap, defaultKeymap, processing, serviceStatus, showInventory, zoomMode])
 
   // Render colored ASCII map
   const renderColoredMap = () => {
@@ -634,7 +737,12 @@ function App() {
 
       {/* Map Panel */}
       <div className="map-panel">
-        <div className="panel-title">Dungeon — {levelName || `Level ${gameState.level}`}</div>
+        <div className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Dungeon — {levelName || `Level ${gameState.level}`}</span>
+          <span style={{ opacity: 0.5, fontSize: '10px' }}>
+            {zoomMode === 'fixed' ? 'fixed' : zoomMode === 'adaptive' ? 'auto' : `[+/-]`} {Math.round(mapZoom)}w
+          </span>
+        </div>
         <div className="map-viewport">
           {processing && mapGrid.length === 0 ? (
             <div className="loading-overlay">
@@ -642,7 +750,15 @@ function App() {
               <span>Generating dungeon...</span>
             </div>
           ) : (
-            <pre className="ascii-map">{renderColoredMap()}</pre>
+            <pre
+              className="ascii-map"
+              style={{
+                fontSize: `${Math.max(6, Math.round(18 * (60 / mapZoom)))}px`,
+                transition: 'font-size 0.15s ease-out',
+              }}
+            >
+              {renderColoredMap()}
+            </pre>
           )}
         </div>
       </div>

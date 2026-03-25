@@ -106,7 +106,7 @@ const getKeymapAsync = makeAsyncCall(gameClient, 'GetKeymap', 'game-service');
 const getGameStateAsync = makeAsyncCall(gameClient, 'GetGameState', 'game-service');
 
 // ── Helper: build layers from world tiles and run render pipeline ──────
-async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, currentEnemiesJson, trace, playerId, playersJson, tileColorsJson) {
+async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, currentEnemiesJson, trace, playerId, playersJson, tileColorsJson, viewportWidth, viewportHeight) {
   let tilesDict;
   try { tilesDict = JSON.parse(tilesJsonStr || '{}'); } catch { tilesDict = {}; }
 
@@ -177,6 +177,8 @@ async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, c
     playerY: py,
     layers: [layer0, layer5, layer10, layer20, layer30],
     playersJson: playersJson || '[]',
+    viewportWidth: viewportWidth || 0,
+    viewportHeight: viewportHeight || 0,
   }, trace);
 
   return {
@@ -274,7 +276,8 @@ async function exploreDoor(call, callback) {
       visualRange,
       call.request.currentEnemiesJson,
       trace, heroId, call.request.playersJson || '[]',
-      '{}'
+      '{}',
+      call.request.viewportWidth, call.request.viewportHeight
     );
 
     callback(null, {
@@ -371,7 +374,8 @@ async function computeMapModifiers(call, callback) {
       visualRange,
       call.request.currentEnemiesJson,
       trace, heroId, call.request.playersJson || '[]',
-      tileColorsJson
+      tileColorsJson,
+      call.request.viewportWidth, call.request.viewportHeight
     );
 
     const responsePayload = {
@@ -612,7 +616,8 @@ async function processInput(call, callback) {
       visualRange,
       currentEnemiesJson,
       trace, heroId, call.request.playersJson || '[]',
-      tileColorsJson
+      tileColorsJson,
+      call.request.viewportWidth, call.request.viewportHeight
     );
 
     callback(null, {

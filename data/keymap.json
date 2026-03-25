@@ -44,5 +44,15 @@
     "key": ">",
     "label": "Go Down",
     "description": "Descend stairs"
+  },
+  "zoomIn": {
+    "key": "+",
+    "label": "Zoom In",
+    "description": "Zoom in (see less, bigger tiles)"
+  },
+  "zoomOut": {
+    "key": "-",
+    "label": "Zoom Out",
+    "description": "Zoom out (see more, smaller tiles)"
   }
 }

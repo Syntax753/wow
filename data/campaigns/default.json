@@ -10,6 +10,8 @@
       "maxEnemies": 1,
       "difficulty": 1,
       "regions": ["village"],
+      "zoomMode": "dynamic",
+      "mapZoom": 60,
       "description": "A quiet village at the edge of the wilderness. A staircase leads down into darkness."
     },
     {
@@ -22,6 +24,8 @@
       "maxEnemies": 5,
       "difficulty": 2,
       "regions": ["crypt", "rats", "dusty"],
+      "zoomMode": "dynamic",
+      "mapZoom": 60,
       "description": "Wide stone corridors echo with distant sounds."
     },
     {
@@ -33,6 +37,8 @@
       "maxEnemies": 8,
       "difficulty": 3,
       "regions": ["rats", "vermin", "dusty"],
+      "zoomMode": "dynamic",
+      "mapZoom": 60,
       "description": "A tangled maze of narrow tunnels and cramped chambers."
     },
     {
@@ -44,6 +50,8 @@
       "maxEnemies": 10,
       "difficulty": 4,
       "regions": ["flooded", "crypt", "rats"],
+      "zoomMode": "dynamic",
+      "mapZoom": 60,
       "description": "Ankle-deep water covers the floor. The air smells of decay."
     },
     {
@@ -55,6 +63,8 @@
       "maxEnemies": 12,
       "difficulty": 5,
       "regions": ["forge", "crypt", "rats"],
+      "zoomMode": "dynamic",
+      "mapZoom": 60,
       "description": "Ancient dwarven forges still glow with faint embers."
     },
     {
@@ -66,6 +76,8 @@
       "maxEnemies": 14,
       "difficulty": 6,
       "regions": ["fungal", "flooded", "vermin"],
+      "zoomMode": "dynamic",
+      "mapZoom": 80,
       "description": "Bioluminescent fungi cast an eerie blue glow across vast caverns."
     },
     {
@@ -77,6 +89,8 @@
       "maxEnemies": 16,
       "difficulty": 7,
       "regions": ["crypt", "rats", "dusty", "fungal"],
+      "zoomMode": "adaptive",
+      "mapZoom": 80,
       "description": "An intentionally confusing maze built to trap intruders."
     },
     {
@@ -88,6 +102,8 @@
       "maxEnemies": 18,
       "difficulty": 8,
       "regions": ["obsidian", "forge", "crypt"],
+      "zoomMode": "dynamic",
+      "mapZoom": 60,
       "description": "Walls of black volcanic glass reflect distorted images."
     },
     {
@@ -99,6 +115,8 @@
       "maxEnemies": 20,
       "difficulty": 9,
       "regions": ["abyssal", "crypt", "flooded"],
+      "zoomMode": "fixed",
+      "mapZoom": 50,
       "description": "The darkness here feels alive. Ancient runes pulse on the walls."
     },
     {
@@ -110,6 +128,8 @@
       "maxEnemies": 25,
       "difficulty": 10,
       "regions": ["dragon", "forge", "obsidian"],
+      "zoomMode": "fixed",
+      "mapZoom": 40,
       "description": "The final depth. Gold glitters in the darkness. Something stirs."
     }
   ]

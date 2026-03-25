@@ -18,6 +18,8 @@ message ProcessInputRequest {
   TraceInfo trace = 5;
   string hero_id = 6;
   string players_json = 7;
+  int32 viewport_width = 8;
+  int32 viewport_height = 9;
 }
 
 message ProcessInputResponse {
@@ -56,6 +58,8 @@ message ComputeMapModifiersRequest {
   TraceInfo trace = 7;
   string hero_id = 8;
   string players_json = 9;
+  int32 viewport_width = 10;
+  int32 viewport_height = 11;
 }
 
 message ComputeMapModifiersResponse {

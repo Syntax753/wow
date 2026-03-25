@@ -32,6 +32,8 @@ message CompositeLayersRequest {
   string rooms_json = 8;
   TraceInfo trace = 9;
   string players_json = 10;
+  int32 viewport_width = 11;
+  int32 viewport_height = 12;
 }
 
 message CompositeLayersResponse {

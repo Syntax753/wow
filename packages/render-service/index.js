@@ -30,8 +30,8 @@ async function compositeLayers(call, callback) {
   try {
     const { layers, playerX, playerY } = call.request;
 
-    const viewportWidth = 60;
-    const viewportHeight = 15;
+    const viewportWidth = call.request.viewportWidth || 60;
+    const viewportHeight = call.request.viewportHeight || 15;
     const halfW = Math.floor(viewportWidth / 2);
     const halfH = Math.floor(viewportHeight / 2);
 
