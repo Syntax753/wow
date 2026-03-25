@@ -11,7 +11,14 @@ const { grpc, DiceService, DndService, HeroService, InventoryService, ActionServ
 
 const log = createLogger('WoW API');
 
+const https = require('https');
+
 const API_PORT = process.env.PORT || process.env.API_PORT || 3001;
+
+// ── GitHub OAuth config ──────────────────────────────────────────────
+const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID || '';
+const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET || '';
+const GITHUB_CALLBACK_URL = process.env.GITHUB_CALLBACK_URL || `http://localhost:${API_PORT}/api/auth/github/callback`;
 const DICE_URL = process.env.DICE_SERVICE_URL || 'localhost:50051';
 const DND_URL = process.env.DND_SERVICE_URL || 'localhost:50052';
 const HERO_URL = process.env.HERO_SERVICE_URL || 'localhost:50053';
@@ -145,6 +152,23 @@ function logEntry(text, type = 'info', source = 'system') {
   return { text, type, source, timestamp: Date.now() };
 }
 
+// ── GitHub OAuth helpers ──────────────────────────────────────────────
+function githubRequest(options, postData) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => (data += chunk));
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch { resolve(data); }
+      });
+    });
+    req.on('error', reject);
+    if (postData) req.write(postData);
+    req.end();
+  });
+}
+
 function json(res, statusCode, data) {
   res.writeHead(statusCode, {
     'Content-Type': 'application/json',
@@ -195,6 +219,98 @@ const server = http.createServer(async (req, res) => {
         res.end(content, 'utf-8');
       }
     });
+    return;
+  }
+
+  // === GitHub OAuth (outside rootSpan — these are redirects, not JSON APIs) ===
+  if (req.url === '/api/auth/github' && req.method === 'GET') {
+    const params = new URLSearchParams({
+      client_id: GITHUB_CLIENT_ID,
+      redirect_uri: GITHUB_CALLBACK_URL,
+      scope: 'read:user',
+    });
+    res.writeHead(302, { Location: `https://github.com/login/oauth/authorize?${params}` });
+    res.end();
+    return;
+  }
+
+  if (req.url.startsWith('/api/auth/github/callback') && req.method === 'GET') {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const code = url.searchParams.get('code');
+    if (!code) {
+      res.writeHead(302, { Location: '/' });
+      res.end();
+      return;
+    }
+
+    try {
+      // Exchange code for access token
+      const tokenBody = JSON.stringify({
+        client_id: GITHUB_CLIENT_ID,
+        client_secret: GITHUB_CLIENT_SECRET,
+        code,
+        redirect_uri: GITHUB_CALLBACK_URL,
+      });
+      const tokenRes = await githubRequest({
+        hostname: 'github.com',
+        path: '/login/oauth/access_token',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Content-Length': Buffer.byteLength(tokenBody),
+        },
+      }, tokenBody);
+
+      if (!tokenRes.access_token) {
+        log.error('GitHub OAuth token error:', tokenRes);
+        res.writeHead(302, { Location: '/?error=auth_failed' });
+        res.end();
+        return;
+      }
+
+      // Fetch GitHub user profile
+      const ghUser = await githubRequest({
+        hostname: 'api.github.com',
+        path: '/user',
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${tokenRes.access_token}`,
+          'Accept': 'application/json',
+          'User-Agent': 'WoW-Game',
+        },
+      });
+
+      const name = ghUser.login || 'Adventurer';
+      const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 20);
+      const playerId = `gh-${slug}-${crypto.randomUUID().slice(0, 4)}`;
+
+      // Create hero for this player (no tracing needed for OAuth flow)
+      await grpcCall(heroClient, 'hero-service', 'resetHero', {
+        heroId: playerId,
+        name,
+        heroClass: 'Fighter',
+      }, null);
+
+      players[playerId] = { name, heroId: playerId, active: false, lastSeen: Date.now(), spawnIndex: -1, color: assignColor() };
+      log.info(`GitHub login: ${name} (${playerId})`);
+
+      // Set cookies and redirect to app
+      const maxAge = 86400;
+      res.writeHead(302, {
+        Location: '/',
+        'Set-Cookie': [
+          `wow_player_id=${encodeURIComponent(playerId)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`,
+          `wow_player_name=${encodeURIComponent(name)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`,
+          `wow_github_avatar=${encodeURIComponent(ghUser.avatar_url || '')}; Path=/; Max-Age=${maxAge}; SameSite=Lax`,
+        ],
+      });
+      res.end();
+    } catch (err) {
+      log.error('GitHub OAuth error:', err.message);
+      res.writeHead(302, { Location: '/?error=auth_failed' });
+      res.end();
+    }
     return;
   }
 

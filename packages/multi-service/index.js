@@ -93,8 +93,8 @@ async function buildPlayersJson(trace) {
     try {
       const hero = await getHeroAsync({ heroId: pid }, trace);
       positions.push({ x: hero.positionX || 0, y: hero.positionY || 0, playerId: pid, color: s.color });
-    } catch {
-      // Hero not found — skip
+    } catch (err) {
+      log.warn(`[Multi] Could not fetch hero for ${pid}: ${err.message}`);
     }
   }
   return JSON.stringify(positions);

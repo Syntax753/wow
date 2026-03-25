@@ -182,11 +182,14 @@ function App() {
   }, [serviceStatus, screen])
 
   // Multiplayer polling — refresh map every 2s to see other players move
+  const gameStateRef = useRef(gameState)
+  gameStateRef.current = gameState
+
   useEffect(() => {
     if (screen !== 'game' || !isMultiplayer || serviceStatus !== 'online') return
     const interval = setInterval(async () => {
       try {
-        const ws = serializeWorldState(gameState)
+        const ws = serializeWorldState(gameStateRef.current)
         const res = await syncTurn(ws.playerX, ws.playerY, ws.currentEnemiesJson, 8, ws.level)
         const mapData = res.data.map
         if (mapData?.merged_tiles_json) {
@@ -196,7 +199,7 @@ function App() {
       } catch { /* ignore sync errors */ }
     }, 2000)
     return () => clearInterval(interval)
-  }, [screen, isMultiplayer, serviceStatus, gameState])
+  }, [screen, isMultiplayer, serviceStatus])
 
   /** Append log entries from an API response into the game state */
   const appendServiceLogs = useCallback((apiLogs: ApiLogEntry[]) => {
@@ -396,52 +399,70 @@ function App() {
           <div style={{ color: 'var(--terminal-dim)', fontSize: '12px', letterSpacing: '6px', textTransform: 'uppercase', marginTop: '8px' }}>
             World of WoW
           </div>
-          <form
-            style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '50px', width: '320px' }}
-            onSubmit={async (e) => {
-              e.preventDefault()
-              const name = loginInput.trim()
-              if (!name) return
-              try {
-                const res = await login(name)
-                const pid = res.data.playerId
-                setPlayerId(pid)
-                setPlayerName(name)
-                document.cookie = `wow_player_id=${encodeURIComponent(pid)}; path=/; max-age=86400`
-                document.cookie = `wow_player_name=${encodeURIComponent(name)}; path=/; max-age=86400`
-                setScreen('splash')
-              } catch (err) {
-                console.error('Login failed:', err)
-              }
-            }}
-          >
-            <input
-              type="text"
-              placeholder="Enter your name..."
-              value={loginInput}
-              onChange={(e) => setLoginInput(e.target.value)}
-              autoFocus
-              maxLength={20}
-              style={{
-                background: 'rgba(10,14,20,0.8)',
-                border: '1px solid var(--terminal-accent)',
-                color: 'var(--terminal-bright)',
-                padding: '14px 18px',
-                fontSize: '16px',
-                fontFamily: 'var(--font-mono)',
-                borderRadius: '4px',
-                textAlign: 'center',
-                outline: 'none',
-              }}
-            />
-            <button
-              type="submit"
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '50px', width: '320px' }}>
+            <a
+              href="/api/auth/github"
               className="splash-btn"
-              disabled={!loginInput.trim() || serviceStatus !== 'online'}
+              style={{
+                textDecoration: 'none',
+                textAlign: 'center',
+                pointerEvents: serviceStatus !== 'online' ? 'none' : 'auto',
+                opacity: serviceStatus !== 'online' ? 0.5 : 1,
+              }}
             >
-              Enter Dungeon
-            </button>
-          </form>
+              Login with GitHub
+            </a>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--terminal-dim)', fontSize: '12px' }}>
+              <div style={{ flex: 1, height: '1px', background: 'var(--terminal-dim)', opacity: 0.3 }} />
+              <span>or</span>
+              <div style={{ flex: 1, height: '1px', background: 'var(--terminal-dim)', opacity: 0.3 }} />
+            </div>
+            <form
+              style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
+              onSubmit={async (e) => {
+                e.preventDefault()
+                const name = loginInput.trim()
+                if (!name) return
+                try {
+                  const res = await login(name)
+                  const pid = res.data.playerId
+                  setPlayerId(pid)
+                  setPlayerName(name)
+                  document.cookie = `wow_player_id=${encodeURIComponent(pid)}; path=/; max-age=86400`
+                  document.cookie = `wow_player_name=${encodeURIComponent(name)}; path=/; max-age=86400`
+                  setScreen('splash')
+                } catch (err) {
+                  console.error('Login failed:', err)
+                }
+              }}
+            >
+              <input
+                type="text"
+                placeholder="Enter your name..."
+                value={loginInput}
+                onChange={(e) => setLoginInput(e.target.value)}
+                maxLength={20}
+                style={{
+                  background: 'rgba(10,14,20,0.8)',
+                  border: '1px solid var(--terminal-accent)',
+                  color: 'var(--terminal-bright)',
+                  padding: '14px 18px',
+                  fontSize: '16px',
+                  fontFamily: 'var(--font-mono)',
+                  borderRadius: '4px',
+                  textAlign: 'center',
+                  outline: 'none',
+                }}
+              />
+              <button
+                type="submit"
+                className="splash-btn"
+                disabled={!loginInput.trim() || serviceStatus !== 'online'}
+              >
+                Enter as Guest
+              </button>
+            </form>
+          </div>
           <div style={{ marginTop: '30px', fontSize: '12px', color: 'var(--terminal-dim)' }}>
             Service Status: <span className={`status-dot ${serviceStatus}`} />
           </div>
