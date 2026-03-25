@@ -54,7 +54,7 @@ function App() {
   const [playerName, setPlayerName] = useState('')
   const [isMultiplayer, setIsMultiplayer] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
-  const [authProvider, setAuthProvider] = useState<'github' | 'guest' | null>(null)
+  const [, setAuthProvider] = useState<'github' | 'guest' | null>(null)
 
   // Zoom system
   const [zoomMode, setZoomMode] = useState<'fixed' | 'dynamic' | 'adaptive'>('dynamic')
