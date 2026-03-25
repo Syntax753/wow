@@ -94,6 +94,7 @@ const initWorldAsync = makeAsyncCall(worldClient, 'InitWorld', 'world-service');
 const placeStructureAsync = makeAsyncCall(worldClient, 'PlaceStructure', 'world-service');
 const generateRoomAsync = makeAsyncCall(roomClient, 'GenerateRoom', 'room-service');
 const generateCorridorAsync = makeAsyncCall(roomClient, 'GenerateCorridor', 'room-service');
+const setTileAsync = makeAsyncCall(worldClient, 'SetTile', 'world-service');
 
 // ── Campaign loading ─────────────────────────────────────────────────
 
@@ -631,7 +632,7 @@ function enqueueEdgesForRoom(roomId, allEdges, queue, processedEdges) {
   }
 }
 
-// Connect two already-placed rooms with corridors from both doors growing toward each other
+// Connect two already-placed rooms by carving an L-shaped floor path between doors
 async function connectRoomsWithCorridor(roomA, roomB, difficulty, trace) {
   const doorA = pickAvailableDoor(roomA);
   const doorB = pickAvailableDoor(roomB);
@@ -642,33 +643,17 @@ async function connectRoomsWithCorridor(roomA, roomB, difficulty, trace) {
   const bx = roomB.worldX + doorB.x;
   const by = roomB.worldY + doorB.y;
 
-  // Place corridor from door A (direction forced by world-service away from room A)
-  const corrResA = await generateCorridorAsync({ level: difficulty }, trace);
-  const isVertA = corrResA.direction === 'N' || corrResA.direction === 'S';
-  await placeStructureAsync({
-    structureType: 'corridor',
-    width: isVertA ? 3 : corrResA.length,
-    height: isVertA ? corrResA.length : 3,
-    description: corrResA.description,
-    tilesJson: corrResA.tilesJson || '{}',
-    doors: [],
-    anchorX: ax, anchorY: ay,
-    direction: corrResA.direction
-  }, trace);
+  // Carve L-shaped path: horizontal from A to B's column, then vertical to B's row
+  const stepX = bx >= ax ? 1 : -1;
+  for (let x = ax; x !== bx + stepX; x += stepX) {
+    await setTileAsync({ x, y: ay, tileChar: '.' }, trace);
+  }
+  const stepY = by >= ay ? 1 : -1;
+  for (let y = ay; y !== by + stepY; y += stepY) {
+    await setTileAsync({ x: bx, y, tileChar: '.' }, trace);
+  }
 
-  // Place corridor from door B (direction forced away from room B, toward A)
-  const corrResB = await generateCorridorAsync({ level: difficulty }, trace);
-  const isVertB = corrResB.direction === 'N' || corrResB.direction === 'S';
-  await placeStructureAsync({
-    structureType: 'corridor',
-    width: isVertB ? 3 : corrResB.length,
-    height: isVertB ? corrResB.length : 3,
-    description: corrResB.description,
-    tilesJson: corrResB.tilesJson || '{}',
-    doors: [],
-    anchorX: bx, anchorY: by,
-    direction: corrResB.direction
-  }, trace);
+  log.debug(`[GameService] Connected R${roomA.id}↔R${roomB.id} via L-path (${ax},${ay})→(${bx},${by})`);
 }
 
 // ── Server bootstrap ─────────────────────────────────────────────────

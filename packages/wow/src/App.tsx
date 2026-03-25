@@ -52,6 +52,7 @@ function App() {
   const [inventory, setInventory] = useState<InventoryState | null>(null)
   const [playerName, setPlayerName] = useState('')
   const [loginInput, setLoginInput] = useState('')
+  const [isMultiplayer, setIsMultiplayer] = useState(false)
 
   // Multi-layered visual state orchestrator
   const [mapGrid, setMapGrid] = useState<Tile[][]>([])
@@ -179,6 +180,23 @@ function App() {
         initialSyncDone.current = false // retry on next render
       })
   }, [serviceStatus, screen])
+
+  // Multiplayer polling — refresh map every 2s to see other players move
+  useEffect(() => {
+    if (screen !== 'game' || !isMultiplayer || serviceStatus !== 'online') return
+    const interval = setInterval(async () => {
+      try {
+        const ws = serializeWorldState(gameState)
+        const res = await syncTurn(ws.playerX, ws.playerY, ws.currentEnemiesJson, 8, ws.level)
+        const mapData = res.data.map
+        if (mapData?.merged_tiles_json) {
+          setMapGrid(JSON.parse(mapData.merged_tiles_json))
+        }
+        if (res.data.actions) applyOverlay(res.data.actions)
+      } catch { /* ignore sync errors */ }
+    }, 2000)
+    return () => clearInterval(interval)
+  }, [screen, isMultiplayer, serviceStatus, gameState])
 
   /** Append log entries from an API response into the game state */
   const appendServiceLogs = useCallback((apiLogs: ApiLogEntry[]) => {
@@ -470,6 +488,7 @@ function App() {
                 setOverlay(null)
                 setLevelName('')
                 try {
+                  setIsMultiplayer(false)
                   await startNewAdventure('default', playerName || 'Adventurer')
                   const heroRes = await getHero()
                   setHero(heroRes.data)
@@ -492,6 +511,7 @@ function App() {
                 setOverlay(null)
                 setLevelName('')
                 try {
+                  setIsMultiplayer(true)
                   const joinRes = await joinGame()
                   const heroRes = await getHero()
                   setHero(heroRes.data)
