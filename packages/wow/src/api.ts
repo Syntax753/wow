@@ -329,6 +329,15 @@ export const updateSettings = (settings: Record<string, any>) =>
 export const startNewAdventure = (campaignId = 'default', name = 'Adventurer', heroClass = 'Fighter') =>
   post<{ success: boolean }>('/game/new', { campaignId, name, heroClass });
 
+// Auth
+export interface AuthUser {
+  playerId: string;
+  name: string;
+  provider: 'github' | 'guest';
+}
+export const getAuthMe = () => get<AuthUser>('/auth/me');
+export const logout = () => post<{ success: boolean }>('/auth/logout', {});
+
 // Login & Players
 export const login = (name: string, heroClass = 'Fighter') =>
   post<{ playerId: string; name: string }>('/login', { name, heroClass });

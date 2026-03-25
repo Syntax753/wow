@@ -16,7 +16,7 @@ import {
   getCampaign,
   getGameState,
   startNewAdventure,
-  login,
+  logout,
   joinGame,
   leaveGame,
   setPlayerId,
@@ -51,8 +51,9 @@ function App() {
   const [showInventory, setShowInventory] = useState(false)
   const [inventory, setInventory] = useState<InventoryState | null>(null)
   const [playerName, setPlayerName] = useState('')
-  const [loginInput, setLoginInput] = useState('')
   const [isMultiplayer, setIsMultiplayer] = useState(false)
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const [authProvider, setAuthProvider] = useState<'github' | 'guest' | null>(null)
 
   // Multi-layered visual state orchestrator
   const [mapGrid, setMapGrid] = useState<Tile[][]>([])
@@ -64,11 +65,14 @@ function App() {
   useEffect(() => {
     const pidMatch = document.cookie.match(/(?:^|; )wow_player_id=([^;]*)/)
     const nameMatch = document.cookie.match(/(?:^|; )wow_player_name=([^;]*)/)
+    const avatarMatch = document.cookie.match(/(?:^|; )wow_github_avatar=([^;]*)/)
     if (pidMatch && nameMatch) {
       const pid = decodeURIComponent(pidMatch[1])
       const pname = decodeURIComponent(nameMatch[1])
       setPlayerId(pid)
       setPlayerName(pname)
+      setAuthProvider(pid.startsWith('gh-') ? 'github' : 'guest')
+      if (avatarMatch) setAvatarUrl(decodeURIComponent(avatarMatch[1]))
       // Validate session — if hero exists, go to splash
       getHero().then((res) => {
         setHero(res.data)
@@ -419,56 +423,6 @@ function App() {
             >
               Login with GitHub
             </a>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--terminal-dim)', fontSize: '12px' }}>
-              <div style={{ flex: 1, height: '1px', background: 'var(--terminal-dim)', opacity: 0.3 }} />
-              <span>or</span>
-              <div style={{ flex: 1, height: '1px', background: 'var(--terminal-dim)', opacity: 0.3 }} />
-            </div>
-            <form
-              style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
-              onSubmit={async (e) => {
-                e.preventDefault()
-                const name = loginInput.trim()
-                if (!name) return
-                try {
-                  const res = await login(name)
-                  const pid = res.data.playerId
-                  setPlayerId(pid)
-                  setPlayerName(name)
-                  document.cookie = `wow_player_id=${encodeURIComponent(pid)}; path=/; max-age=86400`
-                  document.cookie = `wow_player_name=${encodeURIComponent(name)}; path=/; max-age=86400`
-                  setScreen('splash')
-                } catch (err) {
-                  console.error('Login failed:', err)
-                }
-              }}
-            >
-              <input
-                type="text"
-                placeholder="Enter your name..."
-                value={loginInput}
-                onChange={(e) => setLoginInput(e.target.value)}
-                maxLength={20}
-                style={{
-                  background: 'rgba(10,14,20,0.8)',
-                  border: '1px solid var(--terminal-accent)',
-                  color: 'var(--terminal-bright)',
-                  padding: '14px 18px',
-                  fontSize: '16px',
-                  fontFamily: 'var(--font-mono)',
-                  borderRadius: '4px',
-                  textAlign: 'center',
-                  outline: 'none',
-                }}
-              />
-              <button
-                type="submit"
-                className="splash-btn"
-                disabled={!loginInput.trim() || serviceStatus !== 'online'}
-              >
-                Enter as Guest
-              </button>
-            </form>
           </div>
           <div style={{ marginTop: '30px', fontSize: '12px', color: 'var(--terminal-dim)' }}>
             Service Status: <span className={`status-dot ${serviceStatus}`} />
@@ -494,8 +448,42 @@ function App() {
             World of WoW
           </div>
           {playerName && (
-            <div style={{ color: 'var(--terminal-accent)', fontSize: '14px', marginTop: '12px', letterSpacing: '2px' }}>
-              Playing as: {playerName}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '12px' }}>
+              {avatarUrl && (
+                <img
+                  src={avatarUrl}
+                  alt=""
+                  style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--terminal-accent)' }}
+                />
+              )}
+              <span style={{ color: 'var(--terminal-accent)', fontSize: '14px', letterSpacing: '2px' }}>
+                {playerName}
+              </span>
+              <button
+                onClick={async () => {
+                  await logout().catch(() => {})
+                  setPlayerId(null)
+                  setPlayerName('')
+                  setAvatarUrl(null)
+                  setAuthProvider(null)
+                  setHero(null)
+                  document.cookie = 'wow_player_id=; path=/; max-age=0'
+                  document.cookie = 'wow_player_name=; path=/; max-age=0'
+                  document.cookie = 'wow_github_avatar=; path=/; max-age=0'
+                  setScreen('login')
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--terminal-dim)',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  textDecoration: 'underline',
+                  fontFamily: 'var(--font-mono)',
+                }}
+              >
+                logout
+              </button>
             </div>
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '50px', width: '320px' }}>

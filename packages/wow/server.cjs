@@ -18,7 +18,22 @@ const API_PORT = process.env.PORT || process.env.API_PORT || 3001;
 // ── GitHub OAuth config ──────────────────────────────────────────────
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID || '';
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET || '';
-const GITHUB_CALLBACK_URL = process.env.GITHUB_CALLBACK_URL || `http://localhost:${API_PORT}/api/auth/github/callback`;
+
+// Derive base URL from the incoming request (respects Cloud Run's forwarded headers)
+function getOrigin(req) {
+  const proto = req.headers['x-forwarded-proto'] || 'http';
+  const host = req.headers['x-forwarded-host'] || req.headers['host'];
+  return `${proto}://${host}`;
+}
+
+// In dev, Vite runs on :8080; in production (Cloud Run), API serves frontend on same origin
+const DEV_FRONTEND = process.env.FRONTEND_URL || '';
+function getFrontendUrl(req) {
+  if (DEV_FRONTEND) return DEV_FRONTEND;                 // explicit override
+  const origin = getOrigin(req);
+  if (origin.includes('localhost:' + API_PORT)) return 'http://localhost:8080'; // local dev
+  return origin;                                          // production: same origin
+}
 const DICE_URL = process.env.DICE_SERVICE_URL || 'localhost:50051';
 const DND_URL = process.env.DND_SERVICE_URL || 'localhost:50052';
 const HERO_URL = process.env.HERO_SERVICE_URL || 'localhost:50053';
@@ -224,9 +239,10 @@ const server = http.createServer(async (req, res) => {
 
   // === GitHub OAuth (outside rootSpan — these are redirects, not JSON APIs) ===
   if (req.url === '/api/auth/github' && req.method === 'GET') {
+    const callbackUrl = `${getOrigin(req)}/api/auth/github/callback`;
     const params = new URLSearchParams({
       client_id: GITHUB_CLIENT_ID,
-      redirect_uri: GITHUB_CALLBACK_URL,
+      redirect_uri: callbackUrl,
       scope: 'read:user',
     });
     res.writeHead(302, { Location: `https://github.com/login/oauth/authorize?${params}` });
@@ -237,8 +253,10 @@ const server = http.createServer(async (req, res) => {
   if (req.url.startsWith('/api/auth/github/callback') && req.method === 'GET') {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const code = url.searchParams.get('code');
+    const frontend = getFrontendUrl(req);
+    const callbackUrl = `${getOrigin(req)}/api/auth/github/callback`;
     if (!code) {
-      res.writeHead(302, { Location: '/' });
+      res.writeHead(302, { Location: frontend });
       res.end();
       return;
     }
@@ -249,7 +267,7 @@ const server = http.createServer(async (req, res) => {
         client_id: GITHUB_CLIENT_ID,
         client_secret: GITHUB_CLIENT_SECRET,
         code,
-        redirect_uri: GITHUB_CALLBACK_URL,
+        redirect_uri: callbackUrl,
       });
       const tokenRes = await githubRequest({
         hostname: 'github.com',
@@ -264,7 +282,7 @@ const server = http.createServer(async (req, res) => {
 
       if (!tokenRes.access_token) {
         log.error('GitHub OAuth token error:', tokenRes);
-        res.writeHead(302, { Location: '/?error=auth_failed' });
+        res.writeHead(302, { Location: `${frontend}?error=auth_failed` });
         res.end();
         return;
       }
@@ -310,7 +328,7 @@ const server = http.createServer(async (req, res) => {
       // Set cookies and redirect to app (7 days)
       const maxAge = 604800;
       res.writeHead(302, {
-        Location: '/',
+        Location: frontend,
         'Set-Cookie': [
           `wow_player_id=${encodeURIComponent(playerId)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`,
           `wow_player_name=${encodeURIComponent(name)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`,
@@ -320,9 +338,44 @@ const server = http.createServer(async (req, res) => {
       res.end();
     } catch (err) {
       log.error('GitHub OAuth error:', err.message);
-      res.writeHead(302, { Location: '/?error=auth_failed' });
+      res.writeHead(302, { Location: `${frontend}?error=auth_failed` });
       res.end();
     }
+    return;
+  }
+
+  // === Auth info & logout ===
+  if (req.url === '/api/auth/me' && req.method === 'GET') {
+    const pid = getPlayerId(req);
+    const player = players[pid];
+    if (player) {
+      json(res, 200, { playerId: pid, name: player.name, provider: pid.startsWith('gh-') ? 'github' : 'guest' });
+    } else if (pid.startsWith('gh-')) {
+      // Player entry lost (server restart) but cookie is valid — re-register
+      const name = pid.replace(/^gh-/, '').replace(/-/g, ' ');
+      players[pid] = { name, heroId: pid, active: false, lastSeen: Date.now(), spawnIndex: -1, color: assignColor() };
+      json(res, 200, { playerId: pid, name, provider: 'github' });
+    } else {
+      json(res, 401, { error: 'Not authenticated' });
+    }
+    return;
+  }
+
+  if (req.url === '/api/auth/logout' && req.method === 'POST') {
+    const pid = getPlayerId(req);
+    if (players[pid]) {
+      players[pid].active = false;
+      log.info(`Logout: ${players[pid].name} (${pid})`);
+    }
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Set-Cookie': [
+        'wow_player_id=; Path=/; Max-Age=0',
+        'wow_player_name=; Path=/; Max-Age=0',
+        'wow_github_avatar=; Path=/; Max-Age=0',
+      ],
+    });
+    res.end(JSON.stringify({ success: true }));
     return;
   }
 
@@ -572,21 +625,9 @@ const server = http.createServer(async (req, res) => {
 
     // === Login & Players ===
     } else if (req.url === '/api/login' && req.method === 'POST') {
-      const name = (body.name || 'Adventurer').trim();
-      const slug = name.toLowerCase().replace(/[^a-z0-9]/g, '-').slice(0, 20);
-      const playerId = `${slug}-${crypto.randomUUID().slice(0, 4)}`;
-
-      // Create hero for this player
-      await grpcCall(heroClient, 'hero-service', 'resetHero', {
-        heroId: playerId,
-        name,
-        heroClass: body.heroClass || 'Fighter',
-      }, rootSpan);
-
-      players[playerId] = { name, heroId: playerId, active: false, lastSeen: Date.now(), spawnIndex: -1, color: assignColor() };
       rootSpan.timeEnd = Date.now();
-      json(res, 200, envelope({ playerId, name }, [
-        logEntry(`${name} has entered the dungeon.`, 'system', 'login'),
+      json(res, 403, envelope(null, [
+        logEntry('Guest login is disabled. Please sign in with GitHub.', 'system', 'login'),
       ], rootSpan));
 
     } else if (req.url === '/api/players' && req.method === 'GET') {
