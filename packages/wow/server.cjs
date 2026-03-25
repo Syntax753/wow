@@ -797,5 +797,5 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(API_PORT, () => {
   log.info(`Running on port ${API_PORT}`);
-  log.info(`Services: dice(${DICE_URL}) dnd(${DND_URL}) hero(${HERO_URL}) inventory(${INVENTORY_URL}) action(${ACTION_URL}) world(${WORLD_URL})`);
+  log.info(`Services: dice(${DICE_URL}) dnd(${DND_URL}) hero(${HERO_URL}) inventory(${INVENTORY_URL}) action(${ACTION_URL}) world(${WORLD_URL}) game(${GAME_URL}) multi(${MULTI_URL})`);
 });
