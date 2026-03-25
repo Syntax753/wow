@@ -270,10 +270,8 @@ async function syncMultiPlayer(call, callback) {
 
     const playersJson = await buildPlayersJson(trace);
 
-    // Merge revealed tiles into shared fog-of-war
-    await mergeRevealedTiles(trace);
-
     // Use shared fog-of-war ID so player sees everywhere anyone has explored
+    // (dnd-service handles merging revealed tiles into 'multi-shared' automatically)
     const result = await computeMapModifiersAsync({
       playerX: playerX || 0,
       playerY: playerY || 0,
