@@ -56,6 +56,7 @@ function App() {
   const [isMultiplayer, setIsMultiplayer] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [, setAuthProvider] = useState<'github' | 'guest' | null>(null)
+  const [otherPlayers, setOtherPlayers] = useState<{playerId: string, x: number, y: number, color: string}[]>([])
   const [showGuestModal, setShowGuestModal] = useState(false)
   const [guestNameInput, setGuestNameInput] = useState('')
 
@@ -280,22 +281,25 @@ function App() {
   const gameStateRef = useRef(gameState)
   gameStateRef.current = gameState
 
+  // SSE connection for real-time player position updates
   useEffect(() => {
-    if (screen !== 'game' || !isMultiplayer || serviceStatus !== 'online') return
-    const interval = setInterval(async () => {
+    if (screen !== 'game' || serviceStatus !== 'online') {
+      setOtherPlayers([])
+      return
+    }
+    const pid = getPlayerId()
+    if (!pid) return
+
+    const es = new EventSource(`/api/events?playerId=${encodeURIComponent(pid)}`)
+    es.addEventListener('players', (e) => {
       try {
-        const ws = serializeWorldState(gameStateRef.current)
-        const vp = getViewport(zoomRef.current)
-        const res = await syncTurn(ws.playerX, ws.playerY, ws.currentEnemiesJson, 8, ws.level, vp.w, vp.h)
-        const mapData = res.data.map
-        if (mapData?.merged_tiles_json) {
-          setMapGrid(JSON.parse(mapData.merged_tiles_json))
-        }
-        if (res.data.actions) applyOverlay(res.data.actions)
-      } catch { /* ignore sync errors */ }
-    }, 2000)
-    return () => clearInterval(interval)
-  }, [screen, isMultiplayer, serviceStatus])
+        const positions = JSON.parse(e.data)
+        setOtherPlayers(positions.filter((p: { playerId: string }) => p.playerId !== pid))
+      } catch {}
+    })
+    es.onerror = () => { /* EventSource auto-reconnects */ }
+    return () => { es.close(); setOtherPlayers([]) }
+  }, [screen, serviceStatus])
 
   /** Append log entries from an API response into the game state */
   const appendServiceLogs = useCallback((apiLogs: ApiLogEntry[]) => {
@@ -466,9 +470,35 @@ function App() {
   const renderColoredMap = () => {
     if (!mapGrid || mapGrid.length === 0) return null
 
+    // Build lookup for other players in viewport coordinates
+    const playerOverlay = new Map<string, { color: string }>()
+    if (otherPlayers.length > 0 && mapGrid.length > 0) {
+      const vp = getViewport(zoomRef.current)
+      const cx = Math.floor(vp.w / 2)
+      const cy = Math.floor(vp.h / 2)
+      const px = gameState.player.x
+      const py = gameState.player.y
+      for (const op of otherPlayers) {
+        const vx = (op.x - px) + cx
+        const vy = (op.y - py) + cy
+        if (vx >= 0 && vx < vp.w && vy >= 0 && vy < mapGrid.length) {
+          playerOverlay.set(`${vx},${vy}`, { color: op.color })
+        }
+      }
+    }
+
     return mapGrid.map((row, y) => (
       <div key={y} style={{ display: 'flex' }}>
         {row.map((tile, x) => {
+          const otherPlayer = playerOverlay.get(`${x},${y}`)
+          if (otherPlayer) {
+            return (
+              <span key={x} className="ch-player visible-bright" style={{ color: '#eab308', fontWeight: 'bold' }}>
+                @
+              </span>
+            )
+          }
+
           let tClass = getTileClass(tile.char)
 
           if (tile.visible) {

@@ -107,6 +107,36 @@ setInterval(() => {
   }
 }, 60000);
 
+// ── SSE (Server-Sent Events) for real-time multiplayer ─────────────
+const sseClients = new Map(); // playerId → res
+
+function broadcastPlayerPositions(excludePlayerId) {
+  if (sseClients.size === 0) return;
+  // Use SSE-connected clients as the source of truth for who is online
+  const connectedIds = [...sseClients.keys()];
+  const positions = [];
+  let pending = connectedIds.length;
+  if (pending === 0) return;
+  for (const pid of connectedIds) {
+    const p = players[pid];
+    grpcCall(heroClient, 'hero-service', 'getHero', { heroId: pid }, null)
+      .then(hero => {
+        positions.push({ playerId: pid, x: hero.positionX || 0, y: hero.positionY || 0, color: p?.color || '#eab308' });
+      })
+      .catch(() => {})
+      .finally(() => {
+        pending--;
+        if (pending === 0) {
+          const data = JSON.stringify(positions);
+          for (const [clientId, res] of sseClients) {
+            if (clientId === excludePlayerId) continue;
+            try { res.write(`event: players\ndata: ${data}\n\n`); } catch {}
+          }
+        }
+      });
+  }
+}
+
 function cloneReqRes(obj) {
   const clone = { ...obj };
   delete clone.trace;
@@ -379,6 +409,24 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // SSE endpoint for real-time multiplayer updates
+  if (req.url.startsWith('/api/events') && req.method === 'GET') {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const pid = url.searchParams.get('playerId') || getPlayerId(req);
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+    });
+    res.write(`event: connected\ndata: ${JSON.stringify({ playerId: pid })}\n\n`);
+    sseClients.set(pid, res);
+    req.on('close', () => { sseClients.delete(pid); });
+    // Send current player positions immediately
+    broadcastPlayerPositions(null);
+    return;
+  }
+
   // Root span representing the frontend's API call lifecycle
   const rootSpan = {
     traceId: crypto.randomUUID(),
@@ -569,6 +617,9 @@ const server = http.createServer(async (req, res) => {
         actions: actionResult.overlay,
       }, logs, rootSpan));
 
+      // Broadcast position update to all other connected SSE clients
+      broadcastPlayerPositions(pid);
+
     // === Game Loop Sync (Map Modifiers + Actions in one unified trace) ===
     } else if (req.url === '/api/sync' && req.method === 'POST') {
       touchPlayer(req);
@@ -630,6 +681,9 @@ const server = http.createServer(async (req, res) => {
       }
       
       json(res, 200, envelope({ map: mapPayload, actions: actionResult.overlay }, [], rootSpan));
+
+      // Broadcast position update to all connected SSE clients
+      broadcastPlayerPositions(pid);
 
     // === Login & Players ===
     } else if (req.url === '/api/login' && req.method === 'POST') {
