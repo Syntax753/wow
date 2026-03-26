@@ -566,7 +566,20 @@ function App() {
                       document.cookie = `wow_player_id=${encodeURIComponent(res.data.playerId)}; path=/; max-age=604800; samesite=lax`
                       document.cookie = `wow_player_name=${encodeURIComponent(res.data.name)}; path=/; max-age=604800; samesite=lax`
                       setShowGuestModal(false)
-                      setScreen('splash')
+                      initialSyncDone.current = false
+                      setMapGrid([])
+                      setGameState(createInitialState())
+                      setHero(null)
+                      setOverlay(null)
+                      setLevelName('')
+                      setIsMultiplayer(false)
+                      await startNewAdventure('default', res.data.name)
+                      const heroRes = await getHero()
+                      setHero(heroRes.data)
+                      if (heroRes.data) {
+                        setGameState(prev => ({ ...prev, player: { x: heroRes.data.positionX ?? prev.player.x, y: heroRes.data.positionY ?? prev.player.y } }))
+                      }
+                      setScreen('game')
                     }
                   }
                 }}
@@ -585,7 +598,20 @@ function App() {
                     document.cookie = `wow_player_id=${encodeURIComponent(res.data.playerId)}; path=/; max-age=604800; samesite=lax`
                     document.cookie = `wow_player_name=${encodeURIComponent(res.data.name)}; path=/; max-age=604800; samesite=lax`
                     setShowGuestModal(false)
-                    setScreen('splash')
+                    initialSyncDone.current = false
+                    setMapGrid([])
+                    setGameState(createInitialState())
+                    setHero(null)
+                    setOverlay(null)
+                    setLevelName('')
+                    setIsMultiplayer(false)
+                    await startNewAdventure('default', res.data.name)
+                    const heroRes = await getHero()
+                    setHero(heroRes.data)
+                    if (heroRes.data) {
+                      setGameState(prev => ({ ...prev, player: { x: heroRes.data.positionX ?? prev.player.x, y: heroRes.data.positionY ?? prev.player.y } }))
+                    }
+                    setScreen('game')
                   }
                 }}
               >
