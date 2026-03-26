@@ -53,7 +53,7 @@ function App() {
   const [showInventory, setShowInventory] = useState(false)
   const [inventory, setInventory] = useState<InventoryState | null>(null)
   const [playerName, setPlayerName] = useState('')
-  const [isMultiplayer, setIsMultiplayer] = useState(false)
+  const [, setIsMultiplayer] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [, setAuthProvider] = useState<'github' | 'guest' | null>(null)
   const [otherPlayers, setOtherPlayers] = useState<{playerId: string, x: number, y: number, color: string}[]>([])
@@ -398,6 +398,11 @@ function App() {
       // Refresh inventory + hero after each action
       getInventory().then((r) => setInventory(r.data)).catch(() => {})
       getHero().then((r) => setHero(r.data)).catch(() => {})
+
+      // Refresh level name after stairs
+      if (data.action === 'stairs_up' || data.action === 'stairs_down') {
+        getGameState().then((gs) => { if (gs.data.levelName) setLevelName(gs.data.levelName) }).catch(() => {})
+      }
     } catch (err) {
       console.error('Input error:', err)
       addMessage('Connection lost... (services may be offline)', 'system', 'wow')

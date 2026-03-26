@@ -433,7 +433,7 @@ async function processInput(call, callback) {
       getGameStateAsync({}, trace),
     ]);
     const visualRange = effectiveStats.visibility || 6;
-    const mapType = gameStateForInput.mapType || 'dungeon';
+    let mapType = gameStateForInput.mapType || 'dungeon';
     let px = hero.positionX ?? 0;
     let py = hero.positionY ?? 0;
 
@@ -441,7 +441,7 @@ async function processInput(call, callback) {
     const worldState = await getWorldStateAsync({ playerId: heroId }, trace);
     let tilesJsonStr = worldState.tilesJson || '{}';
     let roomsJsonStr = worldState.roomsJson || '[]';
-    const tileColorsJson = worldState.tileColorsJson || '{}';
+    let tileColorsJson = worldState.tileColorsJson || '{}';
 
     let tilesDict;
     try { tilesDict = JSON.parse(tilesJsonStr); } catch { tilesDict = {}; }
@@ -531,6 +531,20 @@ async function processInput(call, callback) {
         }
       } else if (actionId === 'wait') {
         inputResult = { newX: px, newY: py, action: 'wait', message: 'You wait...', positionChanged: false };
+      } else if (actionId === 'stairsDown') {
+        const currentTile = getTile(px, py);
+        if (currentTile === '>') {
+          inputResult = { newX: px, newY: py, action: 'stairs_down', message: 'You descend the stairs...', positionChanged: false };
+        } else {
+          inputResult = { newX: px, newY: py, action: 'none', message: 'There are no stairs here to go down.', positionChanged: false };
+        }
+      } else if (actionId === 'stairsUp') {
+        const currentTile = getTile(px, py);
+        if (currentTile === '<') {
+          inputResult = { newX: px, newY: py, action: 'stairs_up', message: 'You ascend the stairs...', positionChanged: false };
+        } else {
+          inputResult = { newX: px, newY: py, action: 'none', message: 'There are no stairs here to go up.', positionChanged: false };
+        }
       } else {
         inputResult = { newX: px, newY: py, action: actionId, message: '', positionChanged: false };
       }
@@ -622,6 +636,41 @@ async function processInput(call, callback) {
       tilesJsonStr = setRes.tilesJson;
       roomsJsonStr = setRes.roomsJson;
       message = 'You close the door.';
+    }
+
+    // 6c. If stairs, change level
+    if (inputResult.action === 'stairs_down' || inputResult.action === 'stairs_up') {
+      const currentGameState = await getGameStateAsync({}, trace);
+      const currentLevel = currentGameState.currentLevel || 0;
+      const newLevel = inputResult.action === 'stairs_down' ? currentLevel + 1 : Math.max(0, currentLevel - 1);
+
+      if (newLevel !== currentLevel) {
+        // Reset world and generate new level
+        await resetWorldAsync({}, trace);
+        const gameRes = await startGameAsync({ level: newLevel, campaignId: currentGameState.campaignId || 'default' }, trace);
+
+        // Fetch new world state
+        const newWorldState = await getWorldStateAsync({ playerId: heroId }, trace);
+        tilesJsonStr = newWorldState.tilesJson || '{}';
+        roomsJsonStr = newWorldState.roomsJson || '[]';
+        tileColorsJson = newWorldState.tileColorsJson || '{}';
+
+        // Move hero to spawn position
+        let spawnPositions = [];
+        try { spawnPositions = JSON.parse(gameRes.spawnPositionsJson || '[]'); } catch {}
+        if (spawnPositions.length > 0) {
+          px = spawnPositions[0].x;
+          py = spawnPositions[0].y;
+        }
+        await updatePositionAsync({ heroId, x: px, y: py }, trace);
+        currentEnemiesJson = '[]';
+
+        // Update map type for light service
+        const newGameState = await getGameStateAsync({}, trace);
+        mapType = newGameState.mapType || 'dungeon';
+
+        message = `${message} Welcome to ${gameRes.levelName || 'Level ' + newLevel}.`;
+      }
     }
 
     // 7. Run render pipeline with hero's effective visibility
