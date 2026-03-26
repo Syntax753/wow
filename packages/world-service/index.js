@@ -1,5 +1,5 @@
 const grpc = require('@grpc/grpc-js');
-const { WorldService, createLogger } = require('@wow/proto');
+const { WorldService, createLogger, TILE, MAP_TYPE, DIRECTION, ROOM_DESCRIPTIONS } = require('@wow/proto');
 
 const log = createLogger('WorldService');
 const PORT = process.env.WORLD_SERVICE_PORT || 50060;
@@ -82,6 +82,8 @@ const MAP_TYPES = {
     hasCorridors: true,
     decorations: [
       { char: '\u00ac', name: 'alcove', frequency: 0.02, where: 'roomWall', color: '#8b7355' },
+      { char: ',', name: 'rubble', frequency: 0.03, where: 'roomFloor', color: '#4b5563' },
+      { char: '~', name: 'cobweb', frequency: 0.02, where: 'roomFloor', color: '#6b7280' },
     ],
     lightSources: [
       { char: '\u00b0', name: 'candle', pairedWith: 'alcove', color: '#fbbf24', radius: 3 },
@@ -114,16 +116,6 @@ function _varyColor(hexColor, coord) {
 
 // ── BSP Level Generation Classes ─────────────────────────────────────
 
-const ROOM_DESCRIPTIONS = [
-  'A damp, moldy stone chamber.',
-  'A forgotten armory with rusted racks.',
-  'A completely bare, perfectly square room.',
-  'A room smelling faintly of ozone and old blood.',
-  'A ruined shrine dedicated to an unknown deity.',
-  'An opulent bedroom, now thick with dust.',
-  'A collapsed library with burned pages.',
-  'A strange room with a geometric mosaic floor.',
-];
 
 /**
  * BSP tree node — represents a partitioned rectangular area.
@@ -197,9 +189,9 @@ class Room {
       for (let c = this.x; c < this.x + this.width; c++) {
         if (r === this.y || r === this.y + this.height - 1 ||
             c === this.x || c === this.x + this.width - 1) {
-          tiles[`${c},${r}`] = '#';
+          tiles[`${c},${r}`] = TILE.WALL;
         } else {
-          tiles[`${c},${r}`] = '.';
+          tiles[`${c},${r}`] = TILE.FLOOR;
         }
       }
     }
@@ -269,23 +261,23 @@ class Corridor {
   _carveWall(tiles, allRooms, x, y) {
     const key = `${x},${y}`;
     const existing = tiles[key];
-    if (existing && existing !== ' ') return; // don't overwrite anything
-    tiles[key] = '#';
+    if (existing && existing !== TILE.UNKNOWN) return; // don't overwrite anything
+    tiles[key] = TILE.WALL;
   }
 
   _carveTile(tiles, allRooms, x, y, corridorTiles) {
     const key = `${x},${y}`;
     const existing = tiles[key];
-    if (existing === '.' || existing === '+') return; // don't overwrite floor/doors
+    if (existing === TILE.FLOOR || existing === TILE.DOOR) return; // don't overwrite floor/doors
 
     // Check if this is a room wall
     for (const room of allRooms) {
       if (room.isWall(x, y)) {
-        tiles[key] = '+'; // door where corridor meets room wall
+        tiles[key] = TILE.DOOR; // door where corridor meets room wall
         return;
       }
     }
-    tiles[key] = '.'; // corridor floor
+    tiles[key] = TILE.FLOOR; // corridor floor
     if (corridorTiles) corridorTiles.push(key);
   }
 }
@@ -335,7 +327,7 @@ class DungeonMap {
       const originY = -Math.floor(this.height / 2);
       for (let y = originY; y < originY + this.height; y++) {
         for (let x = originX; x < originX + this.width; x++) {
-          this.tiles[`${x},${y}`] = '.';
+          this.tiles[`${x},${y}`] = TILE.FLOOR;
         }
       }
     }
@@ -378,11 +370,11 @@ class DungeonMap {
       for (let c = x + 1; c < x + width - 1; c++) {
         // Top wall
         const top = this.tiles[`${c},${y}`];
-        if (top === '+' || top === '.') { hasExit = true; break; }
+        if (top === TILE.DOOR || top === TILE.FLOOR) { hasExit = true; break; }
         wallPositions.push({ x: c, y: y });
         // Bottom wall
         const bot = this.tiles[`${c},${y + height - 1}`];
-        if (bot === '+' || bot === '.') { hasExit = true; break; }
+        if (bot === TILE.DOOR || bot === TILE.FLOOR) { hasExit = true; break; }
         wallPositions.push({ x: c, y: y + height - 1 });
       }
 
@@ -390,11 +382,11 @@ class DungeonMap {
         for (let r = y + 1; r < y + height - 1; r++) {
           // Left wall
           const left = this.tiles[`${x},${r}`];
-          if (left === '+' || left === '.') { hasExit = true; break; }
+          if (left === TILE.DOOR || left === TILE.FLOOR) { hasExit = true; break; }
           wallPositions.push({ x: x, y: r });
           // Right wall
           const right = this.tiles[`${x + width - 1},${r}`];
-          if (right === '+' || right === '.') { hasExit = true; break; }
+          if (right === TILE.DOOR || right === TILE.FLOOR) { hasExit = true; break; }
           wallPositions.push({ x: x + width - 1, y: r });
         }
       }
@@ -403,7 +395,7 @@ class DungeonMap {
 
       // No exit found — place a door on a random wall position
       const pos = wallPositions[Math.floor(Math.random() * wallPositions.length)];
-      this.tiles[`${pos.x},${pos.y}`] = '+';
+      this.tiles[`${pos.x},${pos.y}`] = TILE.DOOR;
       log.debug(`Added missing door to room at ${x},${y}: door at ${pos.x},${pos.y}`);
     }
   }
@@ -456,9 +448,21 @@ class DungeonMap {
     // Place nonRoom decorations (bushes, flowers on outdoor floor)
     for (const deco of decorations.filter(d => d.where === 'nonRoom')) {
       for (const [coord, ch] of Object.entries(this.tiles)) {
-        if (ch !== '.') continue;
+        if (ch !== TILE.FLOOR) continue;
         const [x, y] = coord.split(',').map(Number);
         if (isInsideRoom(x, y)) continue;
+        if (shouldPlace(x, y, deco.frequency)) {
+          this.tiles[coord] = deco.char;
+        }
+      }
+    }
+
+    // Place roomFloor decorations (rubble, cobwebs on room interior floor)
+    for (const deco of decorations.filter(d => d.where === 'roomFloor')) {
+      for (const [coord, ch] of Object.entries(this.tiles)) {
+        if (ch !== TILE.FLOOR) continue;
+        const [x, y] = coord.split(',').map(Number);
+        if (!isInsideRoom(x, y)) continue;
         if (shouldPlace(x, y, deco.frequency)) {
           this.tiles[coord] = deco.char;
         }
@@ -468,7 +472,7 @@ class DungeonMap {
     // Place roomWall decorations (alcoves on dungeon walls)
     for (const deco of decorations.filter(d => d.where === 'roomWall')) {
       for (const [coord, ch] of Object.entries(this.tiles)) {
-        if (ch !== '#') continue;
+        if (ch !== TILE.WALL) continue;
         const [x, y] = coord.split(',').map(Number);
         const room = isRoomWall(x, y);
         if (!room) continue;
@@ -482,7 +486,7 @@ class DungeonMap {
           const step = getInteriorStep(x, y, room);
           if (!step) continue;
           const candleCoord = `${x + step.dx},${y + step.dy}`;
-          if (this.tiles[candleCoord] === '.') {
+          if (this.tiles[candleCoord] === TILE.FLOOR) {
             this.tiles[candleCoord] = ls.char;
             this._candlePositions.push({ x: x + step.dx, y: y + step.dy, radius: ls.radius });
           }
@@ -505,9 +509,9 @@ class DungeonMap {
 
     for (const [coord, ch] of Object.entries(this.tiles)) {
       let baseColor = null;
-      if (ch === '.' && cfg.floorColor) baseColor = cfg.floorColor;
-      else if (ch === '#' && cfg.wallColor) baseColor = cfg.wallColor;
-      else if (ch === '+' && cfg.doorColor) baseColor = cfg.doorColor;
+      if (ch === TILE.FLOOR && cfg.floorColor) baseColor = cfg.floorColor;
+      else if (ch === TILE.WALL && cfg.wallColor) baseColor = cfg.wallColor;
+      else if (ch === TILE.DOOR && cfg.doorColor) baseColor = cfg.doorColor;
       else if (decoColors[ch]) baseColor = decoColors[ch];
       if (baseColor) this.tileColors[coord] = _varyColor(baseColor, coord);
     }
@@ -515,7 +519,7 @@ class DungeonMap {
     // Corridor tiles get corridorColor (overrides floorColor for corridor paths)
     if (cfg.corridorColor) {
       for (const coord of (this._corridorTiles || [])) {
-        if (this.tiles[coord] === '.') {
+        if (this.tiles[coord] === TILE.FLOOR) {
           this.tileColors[coord] = _varyColor(cfg.corridorColor, coord);
         }
       }
@@ -540,14 +544,14 @@ class DungeonMap {
     for (let i = 0; i < upCount && placed < candidates.length; i++, placed++) {
       const room = candidates[placed];
       const pt = room.randomInteriorPoint();
-      this.tiles[`${pt.x},${pt.y}`] = '<';
+      this.tiles[`${pt.x},${pt.y}`] = TILE.STAIRS_UP;
       if (cfg.floorColor) this.tileColors[`${pt.x},${pt.y}`] = cfg.floorColor;
     }
     // Place down stairs (>)
     for (let i = 0; i < downCount && placed < candidates.length; i++, placed++) {
       const room = candidates[placed];
       const pt = room.randomInteriorPoint();
-      this.tiles[`${pt.x},${pt.y}`] = '>';
+      this.tiles[`${pt.x},${pt.y}`] = TILE.STAIRS_DOWN;
       if (cfg.floorColor) this.tileColors[`${pt.x},${pt.y}`] = cfg.floorColor;
     }
 
@@ -757,15 +761,15 @@ function canFit(structureType, x, y, w, h, anchorX, anchorY) {
     for (let c = x; c < x + w; c++) {
       if (c === anchorX && r === anchorY) continue;
 
-      const t = worldTiles[`${c},${r}`] || ' ';
+      const t = worldTiles[`${c},${r}`] || TILE.UNKNOWN;
 
       if (structureType === 'corridor') {
         // Corridors can cross existing floor tiles (intersection)
         // but cannot cross doors
-        if (t === '+') return false;
+        if (t === TILE.DOOR) return false;
       } else {
         // Rooms: existing floor or door = collision
-        if (t === '.' || t === '+') return false;
+        if (t === TILE.FLOOR || t === TILE.DOOR) return false;
       }
     }
   }
@@ -779,20 +783,20 @@ function detectForcedDirection(anchorX, anchorY) {
   if (Object.keys(worldTiles).length === 0) return null;
   if (anchorX === undefined || anchorY === undefined) return null;
 
-  if (worldTiles[`${anchorX - 1},${anchorY}`] === '.') return 'E'; // Floor to West → grow East
-  if (worldTiles[`${anchorX + 1},${anchorY}`] === '.') return 'W'; // Floor to East → grow West
-  if (worldTiles[`${anchorX},${anchorY - 1}`] === '.') return 'S'; // Floor to North → grow South
-  if (worldTiles[`${anchorX},${anchorY + 1}`] === '.') return 'N'; // Floor to South → grow North
+  if (worldTiles[`${anchorX - 1},${anchorY}`] === TILE.FLOOR) return DIRECTION.EAST; // Floor to West → grow East
+  if (worldTiles[`${anchorX + 1},${anchorY}`] === TILE.FLOOR) return DIRECTION.WEST; // Floor to East → grow West
+  if (worldTiles[`${anchorX},${anchorY - 1}`] === TILE.FLOOR) return DIRECTION.SOUTH; // Floor to North → grow South
+  if (worldTiles[`${anchorX},${anchorY + 1}`] === TILE.FLOOR) return DIRECTION.NORTH; // Floor to South → grow North
   return null;
 }
 
 // Map direction strings to wall indices used by room placement
 function dirToWall(dir) {
   switch (dir) {
-    case 'N': return 0;
-    case 'S': return 1;
-    case 'W': return 2;
-    case 'E': return 3;
+    case DIRECTION.NORTH: return 0;
+    case DIRECTION.SOUTH: return 1;
+    case DIRECTION.WEST: return 2;
+    case DIRECTION.EAST: return 3;
     default: return -1;
   }
 }
@@ -826,35 +830,35 @@ function writeRoomTiles(rx, ry, width, height, doors) {
   for (let r = ry; r < ry + height; r++) {
     for (let c = rx; c < rx + width; c++) {
       if (r === ry || r === ry + height - 1 || c === rx || c === rx + width - 1) {
-        worldTiles[`${c},${r}`] = worldTiles[`${c},${r}`] === '+' ? '+' : '#';
+        worldTiles[`${c},${r}`] = worldTiles[`${c},${r}`] === TILE.DOOR ? TILE.DOOR : TILE.WALL;
       } else {
-        worldTiles[`${c},${r}`] = '.';
+        worldTiles[`${c},${r}`] = TILE.FLOOR;
       }
     }
   }
   // Write doors
   for (const d of doors) {
-    worldTiles[`${rx + d.x},${ry + d.y}`] = '+';
+    worldTiles[`${rx + d.x},${ry + d.y}`] = TILE.DOOR;
   }
   // Safety: if no doors were placed, add one on a random wall
   if (!doors || doors.length === 0) {
     if (width > 2) {
       const dx = Math.floor(Math.random() * (width - 2)) + 1;
-      worldTiles[`${rx + dx},${ry}`] = '+';
+      worldTiles[`${rx + dx},${ry}`] = TILE.DOOR;
     } else if (height > 2) {
       const dy = Math.floor(Math.random() * (height - 2)) + 1;
-      worldTiles[`${rx},${ry + dy}`] = '+';
+      worldTiles[`${rx},${ry + dy}`] = TILE.DOOR;
     }
   }
 }
 
 // Write corridor tiles into worldTiles
 function writeCorridorTiles(rx, ry, direction, length) {
-  const w = (direction === 'E' || direction === 'W') ? length : 1;
-  const h = (direction === 'N' || direction === 'S') ? length : 1;
+  const w = (direction === DIRECTION.EAST || direction === DIRECTION.WEST) ? length : 1;
+  const h = (direction === DIRECTION.NORTH || direction === DIRECTION.SOUTH) ? length : 1;
   for (let r = ry; r < ry + h; r++) {
     for (let c = rx; c < rx + w; c++) {
-      worldTiles[`${c},${r}`] = '.';
+      worldTiles[`${c},${r}`] = TILE.FLOOR;
     }
   }
 }
@@ -895,7 +899,7 @@ function placeStructure(call, callback) {
       // The generator may have rolled a random direction, but we override
       // based on anchor context (forced direction).
       const dir = forced || direction || 'N';
-      const isVertical = dir === 'N' || dir === 'S';
+      const isVertical = dir === DIRECTION.NORTH || dir === DIRECTION.SOUTH;
       const corridorLength = Math.max(width, height); // length is always the larger dim
 
       // Recalculate actual dimensions based on the placement direction
@@ -916,22 +920,22 @@ function placeStructure(call, callback) {
       }
       // Open both ends (floor, not doors)
       if (isVertical) {
-        corrTiles[`1,0`] = '.';
-        corrTiles[`1,${actualH - 1}`] = '.';
+        corrTiles[`1,0`] = TILE.FLOOR;
+        corrTiles[`1,${actualH - 1}`] = TILE.FLOOR;
       } else {
-        corrTiles[`0,1`] = '.';
-        corrTiles[`${actualW - 1},1`] = '.';
+        corrTiles[`0,1`] = TILE.FLOOR;
+        corrTiles[`${actualW - 1},1`] = TILE.FLOOR;
       }
 
       // Position the corridor so the anchor aligns with the floor center
       let rx, ry;
-      if (dir === 'N') {
+      if (dir === DIRECTION.NORTH) {
         rx = anchorX - 1;
         ry = anchorY - actualH + 1;
-      } else if (dir === 'S') {
+      } else if (dir === DIRECTION.SOUTH) {
         rx = anchorX - 1;
         ry = anchorY;
-      } else if (dir === 'W') {
+      } else if (dir === DIRECTION.WEST) {
         rx = anchorX - actualW + 1;
         ry = anchorY - 1;
       } else {
@@ -950,12 +954,12 @@ function placeStructure(call, callback) {
           const wx = rx + lx;
           const wy = ry + ly;
           if (wx === anchorX && wy === anchorY) continue;
-          const existing = worldTiles[`${wx},${wy}`] || ' ';
-          if (existing === '.' || existing === '+') continue;
+          const existing = worldTiles[`${wx},${wy}`] || TILE.UNKNOWN;
+          if (existing === TILE.FLOOR || existing === TILE.DOOR) continue;
           worldTiles[`${wx},${wy}`] = ch;
         }
         // Convert anchor door to floor (door has been opened)
-        worldTiles[`${anchorX},${anchorY}`] = '.';
+        worldTiles[`${anchorX},${anchorY}`] = TILE.FLOOR;
         log.debug(`Corridor placed: ${actualW}x${actualH} ${dir} at ${rx},${ry}`);
       } else {
         log.debug(`Corridor placement failed at anchor ${anchorX},${anchorY}`);
@@ -982,7 +986,7 @@ function placeStructure(call, callback) {
 
           writeRoomTiles(rx, ry, width, height, worldDoors);
           // Convert anchor door to floor (door has been opened)
-          worldTiles[`${anchorX},${anchorY}`] = '.';
+          worldTiles[`${anchorX},${anchorY}`] = TILE.FLOOR;
           worldRooms.push({ x: rx, y: ry, width, height, description });
           log.debug(`Room placed: ${width}x${height} at ${rx},${ry}`);
           break;
@@ -1103,7 +1107,7 @@ function initWorld(call, callback) {
 
     // Write doors into world coords (they should already be in local tiles, but ensure '+')
     for (const d of doors) {
-      worldTiles[`${rx + d.x},${ry + d.y}`] = '+';
+      worldTiles[`${rx + d.x},${ry + d.y}`] = TILE.DOOR;
     }
 
     worldRooms.push({ x: rx, y: ry, width, height, description });

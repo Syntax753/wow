@@ -1,5 +1,5 @@
 const grpc = require('@grpc/grpc-js');
-const { RenderService, createLogger } = require('@wow/proto');
+const { RenderService, createLogger, TILE, LAYER } = require('@wow/proto');
 
 const log = createLogger('RenderService');
 const crypto = require('crypto');
@@ -51,7 +51,7 @@ async function compositeLayers(call, callback) {
       if (!layer.tilesJson) continue;
       const parsed = JSON.parse(layer.tilesJson);
 
-      if (layer.layerType === 0) {
+      if (layer.layerType === LAYER.BASE) {
         // Base Layer (parsed is dictionary {"x,y": "char"})
         for (const [coord, char] of Object.entries(parsed)) {
           const [cx, cy] = coord.split(',').map(Number);
@@ -74,7 +74,7 @@ async function compositeLayers(call, callback) {
             }
           }
         }
-      } else if (layer.layerType === 5) {
+      } else if (layer.layerType === LAYER.REVEALED) {
         // Revealed Layer — tiles the player has ever seen (parsed is array of "x,y" strings)
         for (const coord of parsed) {
           const [cx, cy] = coord.split(',').map(Number);
@@ -84,7 +84,7 @@ async function compositeLayers(call, callback) {
             mapGrid[localY][localX].revealed = true;
           }
         }
-      } else if (layer.layerType === 10) {
+      } else if (layer.layerType === LAYER.FOV) {
         // FOV Layer — currently visible tiles (parsed is array of "x,y" strings)
         for (const coord of parsed) {
           const [cx, cy] = coord.split(',').map(Number);
@@ -95,7 +95,7 @@ async function compositeLayers(call, callback) {
             mapGrid[localY][localX].revealed = true;
           }
         }
-      } else if (layer.layerType === 20 || layer.layerType === 30) {
+      } else if (layer.layerType === LAYER.INTERACTABLES || layer.layerType === LAYER.SPRITES) {
         // Interactables/Sprites/Enemies Layer (parsed is dictionary {"x,y": "char"})
         for (const [coord, char] of Object.entries(parsed)) {
           const [cx, cy] = coord.split(',').map(Number);
@@ -121,7 +121,7 @@ async function compositeLayers(call, callback) {
       const lx = p.x - minX;
       const ly = p.y - minY;
       if (lx >= 0 && lx < viewportWidth && ly >= 0 && ly < viewportHeight) {
-        mapGrid[ly][lx].char = '@';
+        mapGrid[ly][lx].char = TILE.PLAYER;
         mapGrid[ly][lx].visible = true;
         mapGrid[ly][lx].revealed = true;
         mapGrid[ly][lx].color = p.color || DEFAULT_PLAYER_COLOR;
@@ -133,7 +133,7 @@ async function compositeLayers(call, callback) {
     const pLocalY = playerY - minY;
     if (pLocalX >= 0 && pLocalX < viewportWidth && pLocalY >= 0 && pLocalY < viewportHeight) {
       const callingPlayer = allPlayers.find(p => p.x === playerX && p.y === playerY);
-      mapGrid[pLocalY][pLocalX].char = '@';
+      mapGrid[pLocalY][pLocalX].char = TILE.PLAYER;
       mapGrid[pLocalY][pLocalX].visible = true;
       mapGrid[pLocalY][pLocalX].revealed = true;
       mapGrid[pLocalY][pLocalX].color = callingPlayer?.color || DEFAULT_PLAYER_COLOR;

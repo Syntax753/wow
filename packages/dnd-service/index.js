@@ -1,4 +1,4 @@
-const { grpc, DiceService, DndService, RoomService, RenderService, EnemyService, LightService, WorldService, HeroService, InputService, GameService, createLogger } = require('@wow/proto');
+const { grpc, DiceService, DndService, RoomService, RenderService, EnemyService, LightService, WorldService, HeroService, InputService, GameService, createLogger, TILE, ACTION, DIRECTION, MAP_TYPE, LAYER, ACTION_ID } = require('@wow/proto');
 const crypto = require('crypto');
 
 const log = createLogger('DndService');
@@ -114,16 +114,16 @@ async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, c
   const baseMap = {};
   const interactables = {};
   for (const [coord, ch] of Object.entries(tilesDict)) {
-    if (ch === '#' || ch === '.' || ch === ' ' || ch === '\u00ac') {
+    if (ch === TILE.WALL || ch === TILE.FLOOR || ch === TILE.UNKNOWN || ch === TILE.ALCOVE) {
       baseMap[coord] = ch;
     } else {
-      baseMap[coord] = '.';
+      baseMap[coord] = TILE.FLOOR;
       interactables[coord] = ch;
     }
   }
 
-  const layer0 = { layerType: 0, tilesJson: JSON.stringify(baseMap), colorsJson: tileColorsJson || '{}' };
-  const layer20 = { layerType: 20, tilesJson: JSON.stringify(interactables) };
+  const layer0 = { layerType: LAYER.BASE, tilesJson: JSON.stringify(baseMap), colorsJson: tileColorsJson || '{}' };
+  const layer20 = { layerType: LAYER.INTERACTABLES, tilesJson: JSON.stringify(interactables) };
 
   // Enemy layer
   const enemyResponse = await processEnemiesAsync({
@@ -134,7 +134,7 @@ async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, c
     currentEnemiesJson: currentEnemiesJson || '[]'
   }, trace);
 
-  const layer30 = { layerType: 30, tilesJson: enemyResponse.enemyLayer?.tilesJson || '{}' };
+  const layer30 = { layerType: LAYER.SPRITES, tilesJson: enemyResponse.enemyLayer?.tilesJson || '{}' };
 
   // FOV layer
   const lightResponse = await computeVisibilityAsync({
@@ -142,11 +142,11 @@ async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, c
     playerX: px,
     playerY: py,
     visualRange: visualRange || 8,
-    mapType: mapType || 'dungeon',
+    mapType: mapType || MAP_TYPE.DUNGEON,
     candlePositionsJson: candlePositionsJson || '[]'
   }, trace);
 
-  const layer10 = { layerType: 10, tilesJson: lightResponse.tilesJson };
+  const layer10 = { layerType: LAYER.FOV, tilesJson: lightResponse.tilesJson };
 
   // Determine fog-of-war ID: if playersJson has entries, it's a multiplayer session
   let allPlayers = [];
@@ -171,7 +171,7 @@ async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, c
   const revealResponse = await getWorldStateAsync({ playerId: fowId }, trace);
 
   // Revealed layer (all tiles ever seen)
-  const layer5 = { layerType: 5, tilesJson: revealResponse.revealedJson };
+  const layer5 = { layerType: LAYER.REVEALED, tilesJson: revealResponse.revealedJson };
 
   // Composite via render-service
   const renderResponse = await compositeLayersAsync({
@@ -208,7 +208,7 @@ async function exploreDoor(call, callback) {
       getGameStateAsync({}, trace),
     ]);
     const visualRange = effectiveStats.visibility || 6;
-    const mapType = gameStateRes.mapType || 'dungeon';
+    const mapType = gameStateRes.mapType || MAP_TYPE.DUNGEON;
 
     // 2. Roll 1d20 to determine Room vs Corridor
     const typeRoll = await rollDiceAsync(['1d20'], trace);
@@ -236,7 +236,7 @@ async function exploreDoor(call, callback) {
       // 2b. Generate corridor structure (local coords) from room-service
       const corrRes = await generateCorridorAsync({ level: call.request.level }, trace);
       structureType = 'corridor';
-      const isVertical = corrRes.direction === 'N' || corrRes.direction === 'S';
+      const isVertical = corrRes.direction === DIRECTION.NORTH || corrRes.direction === DIRECTION.SOUTH;
       width = isVertical ? 3 : corrRes.length;
       height = isVertical ? corrRes.length : 3;
       description = corrRes.description;
@@ -377,7 +377,7 @@ async function computeMapModifiers(call, callback) {
 
     // 4. Get map type for light computation
     const gameStateForLight = await getGameStateAsync({}, trace);
-    const mapType = gameStateForLight.mapType || 'dungeon';
+    const mapType = gameStateForLight.mapType || MAP_TYPE.DUNGEON;
 
     // 5. Run render pipeline with hero's effective visibility
     const rendered = await buildAndRender(
@@ -435,7 +435,7 @@ async function processInput(call, callback) {
       getGameStateAsync({}, trace),
     ]);
     const visualRange = effectiveStats.visibility || 6;
-    let mapType = gameStateForInput.mapType || 'dungeon';
+    let mapType = gameStateForInput.mapType || MAP_TYPE.DUNGEON;
     let px = hero.positionX ?? 0;
     let py = hero.positionY ?? 0;
 
@@ -477,31 +477,31 @@ async function processInput(call, callback) {
       }
     }
 
-    let inputResult = { action: 'none', message: '', positionChanged: false, newX: px, newY: py };
+    let inputResult = { action: ACTION.NONE, message: '', positionChanged: false, newX: px, newY: py };
 
-    const getTile = (x, y) => tilesDict[`${x},${y}`] || ' ';
+    const getTile = (x, y) => tilesDict[`${x},${y}`] || TILE.UNKNOWN;
 
     if (actionId) {
-      if (actionId.startsWith('move')) {
+      if (actionId.startsWith(ACTION.MOVE)) {
         const nx = px + actionDef.dx;
         const ny = py + actionDef.dy;
         const target = getTile(nx, ny);
 
-        if (target === '#' || target === '\u00ac') {
-          inputResult = { newX: px, newY: py, action: 'blocked', message: 'Ouch!', positionChanged: false };
-        } else if (target === ' ') {
-          inputResult = { newX: px, newY: py, action: 'blocked', message: '', positionChanged: false };
-        } else if (target === '+') {
-          inputResult = { newX: nx, newY: ny, action: 'open_door', message: 'You push the door open and peer into the darkness...', doorX: nx, doorY: ny, positionChanged: true };
+        if (target === TILE.WALL || target === TILE.ALCOVE) {
+          inputResult = { newX: px, newY: py, action: ACTION.BLOCKED, message: 'Ouch!', positionChanged: false };
+        } else if (target === TILE.UNKNOWN) {
+          inputResult = { newX: px, newY: py, action: ACTION.BLOCKED, message: '', positionChanged: false };
+        } else if (target === TILE.DOOR) {
+          inputResult = { newX: nx, newY: ny, action: ACTION.OPEN_DOOR, message: 'You push the door open and peer into the darkness...', doorX: nx, doorY: ny, positionChanged: true };
         } else {
-          inputResult = { newX: nx, newY: ny, action: 'move', message: '', positionChanged: true };
+          inputResult = { newX: nx, newY: ny, action: ACTION.MOVE, message: '', positionChanged: true };
         }
-      } else if (actionId === 'open') {
+      } else if (actionId === ACTION_ID.OPEN) {
         const adjacent = [{ x: px, y: py - 1 }, { x: px, y: py + 1 }, { x: px - 1, y: py }, { x: px + 1, y: py }];
         let foundDoor = false;
         for (const pos of adjacent) {
-          if (getTile(pos.x, pos.y) === '+') {
-            inputResult = { newX: pos.x, newY: pos.y, action: 'open_door', message: 'You push the door open and peer into the darkness...', doorX: pos.x, doorY: pos.y, positionChanged: true };
+          if (getTile(pos.x, pos.y) === TILE.DOOR) {
+            inputResult = { newX: pos.x, newY: pos.y, action: ACTION.OPEN_DOOR, message: 'You push the door open and peer into the darkness...', doorX: pos.x, doorY: pos.y, positionChanged: true };
             foundDoor = true;
             break;
           }
@@ -509,22 +509,22 @@ async function processInput(call, callback) {
         if (!foundDoor) {
           inputResult.message = 'There is no door nearby.';
         }
-      } else if (actionId === 'close') {
+      } else if (actionId === ACTION_ID.CLOSE) {
         // Close: find an adjacent open doorway (floor tile on a wall boundary)
         // We look for '.' tiles that were previously doors — these are adjacent to walls on 3+ sides
         const adjacent = [{ x: px, y: py - 1 }, { x: px, y: py + 1 }, { x: px - 1, y: py }, { x: px + 1, y: py }];
         let foundOpening = false;
         for (const pos of adjacent) {
           const tile = getTile(pos.x, pos.y);
-          if (tile !== '.') continue;
+          if (tile !== TILE.FLOOR) continue;
           // Check if this floor tile is on a wall boundary (adjacent to walls on 2+ sides = doorway)
           let wallCount = 0;
-          if (getTile(pos.x, pos.y - 1) === '#') wallCount++;
-          if (getTile(pos.x, pos.y + 1) === '#') wallCount++;
-          if (getTile(pos.x - 1, pos.y) === '#') wallCount++;
-          if (getTile(pos.x + 1, pos.y) === '#') wallCount++;
+          if (getTile(pos.x, pos.y - 1) === TILE.WALL) wallCount++;
+          if (getTile(pos.x, pos.y + 1) === TILE.WALL) wallCount++;
+          if (getTile(pos.x - 1, pos.y) === TILE.WALL) wallCount++;
+          if (getTile(pos.x + 1, pos.y) === TILE.WALL) wallCount++;
           if (wallCount >= 2) {
-            inputResult = { newX: px, newY: py, action: 'close_door', message: '', doorX: pos.x, doorY: pos.y, positionChanged: false };
+            inputResult = { newX: px, newY: py, action: ACTION.CLOSE_DOOR, message: '', doorX: pos.x, doorY: pos.y, positionChanged: false };
             foundOpening = true;
             break;
           }
@@ -532,21 +532,21 @@ async function processInput(call, callback) {
         if (!foundOpening) {
           inputResult.message = 'There is nothing to close nearby.';
         }
-      } else if (actionId === 'wait') {
-        inputResult = { newX: px, newY: py, action: 'wait', message: 'You wait...', positionChanged: false };
-      } else if (actionId === 'stairsDown') {
+      } else if (actionId === ACTION_ID.WAIT) {
+        inputResult = { newX: px, newY: py, action: ACTION.WAIT, message: 'You wait...', positionChanged: false };
+      } else if (actionId === ACTION_ID.STAIRS_DOWN) {
         const currentTile = getTile(px, py);
-        if (currentTile === '>') {
-          inputResult = { newX: px, newY: py, action: 'stairs_down', message: 'You descend the stairs...', positionChanged: false };
+        if (currentTile === TILE.STAIRS_DOWN) {
+          inputResult = { newX: px, newY: py, action: ACTION.STAIRS_DOWN, message: 'You descend the stairs...', positionChanged: false };
         } else {
-          inputResult = { newX: px, newY: py, action: 'none', message: 'There are no stairs here to go down.', positionChanged: false };
+          inputResult = { newX: px, newY: py, action: ACTION.NONE, message: 'There are no stairs here to go down.', positionChanged: false };
         }
-      } else if (actionId === 'stairsUp') {
+      } else if (actionId === ACTION_ID.STAIRS_UP) {
         const currentTile = getTile(px, py);
-        if (currentTile === '<') {
-          inputResult = { newX: px, newY: py, action: 'stairs_up', message: 'You ascend the stairs...', positionChanged: false };
+        if (currentTile === TILE.STAIRS_UP) {
+          inputResult = { newX: px, newY: py, action: ACTION.STAIRS_UP, message: 'You ascend the stairs...', positionChanged: false };
         } else {
-          inputResult = { newX: px, newY: py, action: 'none', message: 'There are no stairs here to go up.', positionChanged: false };
+          inputResult = { newX: px, newY: py, action: ACTION.NONE, message: 'There are no stairs here to go up.', positionChanged: false };
         }
       } else {
         inputResult = { newX: px, newY: py, action: actionId, message: '', positionChanged: false };
@@ -563,7 +563,7 @@ async function processInput(call, callback) {
     }
 
     // 6. If open_door, convert door to floor and run explore flow
-    if (inputResult.action === 'open_door') {
+    if (inputResult.action === ACTION.OPEN_DOOR) {
       const anchorX = inputResult.doorX;
       const anchorY = inputResult.doorY;
 
@@ -605,7 +605,7 @@ async function processInput(call, callback) {
       } else {
         const corrRes = await generateCorridorAsync({ level: level || 1 }, trace);
         structureType = 'corridor';
-        const isVertical = corrRes.direction === 'N' || corrRes.direction === 'S';
+        const isVertical = corrRes.direction === DIRECTION.NORTH || corrRes.direction === DIRECTION.SOUTH;
         width = isVertical ? 3 : corrRes.length;
         height = isVertical ? corrRes.length : 3;
         description = corrRes.description;
@@ -632,7 +632,7 @@ async function processInput(call, callback) {
     }
 
     // 6b. If close_door, convert adjacent floor back to door
-    if (inputResult.action === 'close_door') {
+    if (inputResult.action === ACTION.CLOSE_DOOR) {
       const dx = inputResult.doorX;
       const dy = inputResult.doorY;
       const setRes = await setTileAsync({ x: dx, y: dy, tileChar: '+' }, trace);
@@ -642,10 +642,10 @@ async function processInput(call, callback) {
     }
 
     // 6c. If stairs, change level
-    if (inputResult.action === 'stairs_down' || inputResult.action === 'stairs_up') {
+    if (inputResult.action === ACTION.STAIRS_DOWN || inputResult.action === ACTION.STAIRS_UP) {
       const currentGameState = await getGameStateAsync({}, trace);
       const currentLevel = currentGameState.currentLevel || 0;
-      const newLevel = inputResult.action === 'stairs_down' ? currentLevel + 1 : Math.max(0, currentLevel - 1);
+      const newLevel = inputResult.action === ACTION.STAIRS_DOWN ? currentLevel + 1 : Math.max(0, currentLevel - 1);
 
       if (newLevel !== currentLevel) {
         // Check if target level already exists (another player may be there)
@@ -683,7 +683,7 @@ async function processInput(call, callback) {
 
         // Update map type for light service
         const newGameState = await getGameStateAsync({}, trace);
-        mapType = newGameState.mapType || 'dungeon';
+        mapType = newGameState.mapType || MAP_TYPE.DUNGEON;
 
         message = `${message} Welcome to ${gameRes.levelName || 'Level ' + newLevel}.`;
       }

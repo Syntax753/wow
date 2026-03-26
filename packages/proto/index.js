@@ -2,6 +2,7 @@ const path = require('path');
 const grpc = require('@grpc/grpc-js');
 const protoLoader = require('@grpc/proto-loader');
 const { createLogger, LogLevel } = require('./logger');
+const { TILE, ACTION, DIRECTION, MAP_TYPE, LAYER, ACTION_ID, PROXIMITY, ROOM_DESCRIPTIONS } = require('./constants');
 
 const PROTO_DIR = __dirname;
 
@@ -62,4 +63,12 @@ module.exports = {
   MultiService: multiProto.multi.MultiService,
   createLogger,
   LogLevel,
+  TILE,
+  ACTION,
+  DIRECTION,
+  MAP_TYPE,
+  LAYER,
+  ACTION_ID,
+  PROXIMITY,
+  ROOM_DESCRIPTIONS,
 };

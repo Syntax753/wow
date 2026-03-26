@@ -1,5 +1,12 @@
 // Game state types and map rendering logic
 
+export const DIRECTION = {
+  NORTH: 'N',
+  SOUTH: 'S',
+  EAST: 'E',
+  WEST: 'W',
+} as const;
+
 export const TILE = {
   WALL: '#',
   FLOOR: '.',
@@ -12,6 +19,8 @@ export const TILE = {
   FLOWERS: '*',
   ALCOVE: '\u00ac',
   CANDLE: '\u00b0',
+  RUBBLE: ',',
+  COBWEB: '~',
   UNKNOWN: ' ',
 } as const;
 
@@ -120,7 +129,7 @@ export function movePlayer(
 
   // Check if stepping onto a door
   let hitDoor: Position | null = null;
-  if (targetTile === TILE.DOOR || targetTile === '+') {
+  if (targetTile === TILE.DOOR) {
     hitDoor = { x: newX, y: newY };
   }
 
@@ -166,38 +175,38 @@ export function addRoom(
     roomY = originY;
   } else {
     // Legacy fallback
-    direction = 'N';
+    direction = DIRECTION.NORTH;
     for (const room of state.rooms) {
-      if (doorPos.y === room.y) direction = 'N';
-      else if (doorPos.y === room.y + room.height - 1) direction = 'S';
-      else if (doorPos.x === room.x) direction = 'W';
-      else if (doorPos.x === room.x + room.width - 1) direction = 'E';
+      if (doorPos.y === room.y) direction = DIRECTION.NORTH;
+      else if (doorPos.y === room.y + room.height - 1) direction = DIRECTION.SOUTH;
+      else if (doorPos.x === room.x) direction = DIRECTION.WEST;
+      else if (doorPos.x === room.x + room.width - 1) direction = DIRECTION.EAST;
     }
 
     const corridorLength = 3;
     switch (direction) {
-      case 'N':
+      case DIRECTION.NORTH:
         roomX = doorPos.x - Math.floor(width / 2);
         roomY = doorPos.y - corridorLength - height;
         for (let i = 1; i <= corridorLength; i++) {
           newTiles[`${doorPos.x},${doorPos.y - i}`] = TILE.CORRIDOR;
         }
         break;
-      case 'S':
+      case DIRECTION.SOUTH:
         roomX = doorPos.x - Math.floor(width / 2);
         roomY = doorPos.y + corridorLength + 1;
         for (let i = 1; i <= corridorLength; i++) {
           newTiles[`${doorPos.x},${doorPos.y + i}`] = TILE.CORRIDOR;
         }
         break;
-      case 'E':
+      case DIRECTION.EAST:
         roomX = doorPos.x + corridorLength + 1;
         roomY = doorPos.y - Math.floor(height / 2);
         for (let i = 1; i <= corridorLength; i++) {
           newTiles[`${doorPos.x + i},${doorPos.y}`] = TILE.CORRIDOR;
         }
         break;
-      case 'W':
+      case DIRECTION.WEST:
         roomX = doorPos.x - corridorLength - width;
         roomY = doorPos.y - Math.floor(height / 2);
         for (let i = 1; i <= corridorLength; i++) {
@@ -209,8 +218,6 @@ export function addRoom(
         roomY = doorPos.y - height - 2;
     }
 
-    roomX = roomX;
-    roomY = roomY;
   }
 
   let newRoom: Room;
@@ -224,7 +231,7 @@ export function addRoom(
     newRoom.description = description;
 
     if (originX === undefined) {
-      const revDoor = getReverseDoorPosition(direction || 'N', roomX, roomY, width, height, doorPos);
+      const revDoor = getReverseDoorPosition(direction || DIRECTION.NORTH, roomX, roomY, width, height, doorPos);
       if (revDoor) {
         newTiles[`${revDoor.x},${revDoor.y}`] = TILE.DOOR;
         newRoom.doors.push(revDoor);
@@ -264,13 +271,13 @@ function getReverseDoorPosition(
   _doorPos: Position,
 ): Position | null {
   switch (direction) {
-    case 'N':
+    case DIRECTION.NORTH:
       return { x: roomX + Math.floor(width / 2), y: roomY + height - 1 };
-    case 'S':
+    case DIRECTION.SOUTH:
       return { x: roomX + Math.floor(width / 2), y: roomY };
-    case 'E':
+    case DIRECTION.EAST:
       return { x: roomX, y: roomY + Math.floor(height / 2) };
-    case 'W':
+    case DIRECTION.WEST:
       return { x: roomX + width - 1, y: roomY + Math.floor(height / 2) };
     default:
       return null;

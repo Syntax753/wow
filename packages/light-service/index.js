@@ -1,5 +1,5 @@
 const grpc = require('@grpc/grpc-js');
-const { LightService, createLogger } = require('@wow/proto');
+const { LightService, createLogger, TILE, MAP_TYPE, LAYER } = require('@wow/proto');
 
 const log = createLogger('LightService');
 const PORT = process.env.LIGHT_PORT || 50057;
@@ -29,15 +29,15 @@ function computeVisibility(call, callback) {
     const visible = new Set();
 
     // Nature / outdoor maps: full visibility across all tiles
-    if (mapType === 'nature') {
+    if (mapType === MAP_TYPE.NATURE) {
       for (const coord of Object.keys(tilesDict)) {
-        if (tilesDict[coord] !== ' ') visible.add(coord);
+        if (tilesDict[coord] !== TILE.UNKNOWN) visible.add(coord);
       }
 
       log.debug(`Full visibility (nature) at (${px},${py}), ${visible.size} tiles visible`);
 
       callback(null, {
-        layerType: 10,
+        layerType: LAYER.FOV,
         tilesJson: JSON.stringify([...visible]),
         trace
       });
@@ -46,7 +46,7 @@ function computeVisibility(call, callback) {
 
     // Dungeon / indoor maps: Bresenham raycast with light radius
     function getTile(x, y) {
-      return tilesDict[`${x},${y}`] || ' ';
+      return tilesDict[`${x},${y}`] || TILE.UNKNOWN;
     }
 
     // Player tile is always visible
@@ -70,10 +70,10 @@ function computeVisibility(call, callback) {
         visible.add(`${cx},${cy}`);
 
         // Walls and alcoves block further vision but are themselves visible
-        if ((t === '#' || t === '\u00ac') && !(cx === x0 && cy === y0)) break;
+        if ((t === TILE.WALL || t === TILE.ALCOVE) && !(cx === x0 && cy === y0)) break;
 
         // Unknown/empty space beyond the map also blocks
-        if (t === ' ' && !(cx === x0 && cy === y0)) break;
+        if (t === TILE.UNKNOWN && !(cx === x0 && cy === y0)) break;
 
         if (cx === x1 && cy === y1) break;
         let e2 = 2 * err;
@@ -118,8 +118,8 @@ function computeVisibility(call, callback) {
           if (Math.abs(lx - cx0) > cr || Math.abs(ly - cy0) > cr) break;
           const t = getTile(lx, ly);
           visible.add(`${lx},${ly}`);
-          if (t === '#' && !(lx === x0 && ly === y0)) break;
-          if (t === ' ' && !(lx === x0 && ly === y0)) break;
+          if (t === TILE.WALL && !(lx === x0 && ly === y0)) break;
+          if (t === TILE.UNKNOWN && !(lx === x0 && ly === y0)) break;
           if (lx === x1 && ly === y1) break;
           let e2 = 2 * err;
           if (e2 > -dy) { err -= dy; lx += sx; }
@@ -140,7 +140,7 @@ function computeVisibility(call, callback) {
     log.debug(`Computed FOV (dungeon) at (${px},${py}), ${visible.size} tiles visible, ${candlePositions.length} candles`);
 
     callback(null, {
-      layerType: 10,
+      layerType: LAYER.FOV,
       tilesJson: JSON.stringify([...visible]),
       trace
     });

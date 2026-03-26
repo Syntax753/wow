@@ -1,15 +1,9 @@
 const grpc = require('@grpc/grpc-js');
-const { InputService, createLogger } = require('@wow/proto');
+const { InputService, createLogger, TILE, ACTION } = require('@wow/proto');
 
 const log = createLogger('InputService');
 const PORT = process.env.INPUT_SERVICE_PORT || 50061;
 
-const TILE_WALL = '#';
-const TILE_FLOOR = '.';
-const TILE_DOOR = '+';
-const TILE_STAIRS_UP = '<';
-const TILE_STAIRS_DOWN = '>';
-const TILE_UNKNOWN = ' ';
 
 // Map keys to movement deltas
 const MOVE_KEYS = {
@@ -41,7 +35,7 @@ function processInput(call, callback) {
     try { tiles = JSON.parse(tilesJson || '{}'); } catch { tiles = {}; }
 
     function getTile(x, y) {
-      return tiles[`${x},${y}`] || TILE_UNKNOWN;
+      return tiles[`${x},${y}`] || TILE.UNKNOWN;
     }
 
     // Movement keys
@@ -51,10 +45,10 @@ function processInput(call, callback) {
       const newY = py + move.dy;
       const target = getTile(newX, newY);
 
-      if (target === TILE_WALL) {
+      if (target === TILE.WALL) {
         callback(null, {
           newX: px, newY: py,
-          action: 'blocked',
+          action: ACTION.BLOCKED,
           message: 'Ouch!',
           positionChanged: false,
           trace
@@ -62,10 +56,10 @@ function processInput(call, callback) {
         return;
       }
 
-      if (target === TILE_UNKNOWN) {
+      if (target === TILE.UNKNOWN) {
         callback(null, {
           newX: px, newY: py,
-          action: 'blocked',
+          action: ACTION.BLOCKED,
           message: '',
           positionChanged: false,
           trace
@@ -73,11 +67,11 @@ function processInput(call, callback) {
         return;
       }
 
-      if (target === TILE_DOOR) {
+      if (target === TILE.DOOR) {
         // Step onto the door tile and trigger open_door action
         callback(null, {
           newX: newX, newY: newY,
-          action: 'open_door',
+          action: ACTION.OPEN_DOOR,
           message: 'You push the door open and peer into the darkness...',
           doorX: newX, doorY: newY,
           positionChanged: true,
@@ -89,7 +83,7 @@ function processInput(call, callback) {
       // Valid floor tile — move there
       callback(null, {
         newX: newX, newY: newY,
-        action: 'move',
+        action: ACTION.MOVE,
         message: '',
         positionChanged: true,
         trace
@@ -107,11 +101,11 @@ function processInput(call, callback) {
       ];
 
       for (const pos of adjacent) {
-        if (getTile(pos.x, pos.y) === TILE_DOOR) {
+        if (getTile(pos.x, pos.y) === TILE.DOOR) {
           // Step onto the door
           callback(null, {
             newX: pos.x, newY: pos.y,
-            action: 'open_door',
+            action: ACTION.OPEN_DOOR,
             message: 'You push the door open and peer into the darkness...',
             doorX: pos.x, doorY: pos.y,
             positionChanged: true,
@@ -123,7 +117,7 @@ function processInput(call, callback) {
 
       callback(null, {
         newX: px, newY: py,
-        action: 'none',
+        action: ACTION.NONE,
         message: 'There is no door nearby.',
         positionChanged: false,
         trace
@@ -142,17 +136,17 @@ function processInput(call, callback) {
 
       for (const pos of adjacent) {
         const tile = getTile(pos.x, pos.y);
-        if (tile !== TILE_FLOOR) continue;
+        if (tile !== TILE.FLOOR) continue;
         // Check if tile is on a wall boundary (doorway = 2+ adjacent walls)
         let wallCount = 0;
-        if (getTile(pos.x, pos.y - 1) === TILE_WALL) wallCount++;
-        if (getTile(pos.x, pos.y + 1) === TILE_WALL) wallCount++;
-        if (getTile(pos.x - 1, pos.y) === TILE_WALL) wallCount++;
-        if (getTile(pos.x + 1, pos.y) === TILE_WALL) wallCount++;
+        if (getTile(pos.x, pos.y - 1) === TILE.WALL) wallCount++;
+        if (getTile(pos.x, pos.y + 1) === TILE.WALL) wallCount++;
+        if (getTile(pos.x - 1, pos.y) === TILE.WALL) wallCount++;
+        if (getTile(pos.x + 1, pos.y) === TILE.WALL) wallCount++;
         if (wallCount >= 2) {
           callback(null, {
             newX: px, newY: py,
-            action: 'close_door',
+            action: ACTION.CLOSE_DOOR,
             message: 'You close the door.',
             doorX: pos.x, doorY: pos.y,
             positionChanged: false,
@@ -164,7 +158,7 @@ function processInput(call, callback) {
 
       callback(null, {
         newX: px, newY: py,
-        action: 'none',
+        action: ACTION.NONE,
         message: 'There is nothing to close nearby.',
         positionChanged: false,
         trace
@@ -175,10 +169,10 @@ function processInput(call, callback) {
     // '<' key — go up stairs
     if (key === '<') {
       const currentTile = getTile(px, py);
-      if (currentTile === TILE_STAIRS_UP) {
+      if (currentTile === TILE.STAIRS_UP) {
         callback(null, {
           newX: px, newY: py,
-          action: 'stairs_up',
+          action: ACTION.STAIRS_UP,
           message: 'You ascend the stairs...',
           positionChanged: false,
           trace
@@ -186,7 +180,7 @@ function processInput(call, callback) {
       } else {
         callback(null, {
           newX: px, newY: py,
-          action: 'none',
+          action: ACTION.NONE,
           message: 'There are no stairs here to go up.',
           positionChanged: false,
           trace
@@ -198,10 +192,10 @@ function processInput(call, callback) {
     // '>' key — go down stairs
     if (key === '>') {
       const currentTile = getTile(px, py);
-      if (currentTile === TILE_STAIRS_DOWN) {
+      if (currentTile === TILE.STAIRS_DOWN) {
         callback(null, {
           newX: px, newY: py,
-          action: 'stairs_down',
+          action: ACTION.STAIRS_DOWN,
           message: 'You descend the stairs...',
           positionChanged: false,
           trace
@@ -209,7 +203,7 @@ function processInput(call, callback) {
       } else {
         callback(null, {
           newX: px, newY: py,
-          action: 'none',
+          action: ACTION.NONE,
           message: 'There are no stairs here to go down.',
           positionChanged: false,
           trace
@@ -222,7 +216,7 @@ function processInput(call, callback) {
     if (key === '.' || key === '5') {
       callback(null, {
         newX: px, newY: py,
-        action: 'wait',
+        action: ACTION.WAIT,
         message: 'You wait...',
         positionChanged: false,
         trace
@@ -233,7 +227,7 @@ function processInput(call, callback) {
     // Unrecognized key
     callback(null, {
       newX: px, newY: py,
-      action: 'none',
+      action: ACTION.NONE,
       message: '',
       positionChanged: false,
       trace

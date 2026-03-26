@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { grpc, ActionService, GameService, createLogger } = require('@wow/proto');
+const { grpc, ActionService, GameService, createLogger, TILE, PROXIMITY } = require('@wow/proto');
 
 const log = createLogger('ActionService');
 
@@ -33,16 +33,6 @@ const getKeymapAsync = makeAsyncCall(gameClient, 'GetKeymap', 'game-service');
 
 const PORT = process.env.ACTION_SERVICE_PORT || '50055';
 
-// Tile constants matching the wow frontend
-const TILE = {
-  WALL: '#',
-  FLOOR: '.',
-  DOOR: '+',
-  PLAYER: '@',
-  CORRIDOR: ':',
-  UNKNOWN: ' ',
-};
-
 function getTileAt(tilesDict, x, y) {
   return tilesDict[`${x},${y}`] || TILE.UNKNOWN;
 }
@@ -75,38 +65,38 @@ async function getAvailableActions(call, callback) {
     
     // Evaluate proximity conditions
     if (def.actionOnProximity) {
-      if (def.actionOnProximity === 'door') {
+      if (def.actionOnProximity === PROXIMITY.DOOR) {
         const adjacent = [{ dx: 0, dy: -1 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }, { dx: 1, dy: 0 }];
         let nearDoor = false;
         for (const { dx, dy } of adjacent) {
-          if (getTileAt(tilesDict, playerX + dx, playerY + dy) === '+') {
+          if (getTileAt(tilesDict, playerX + dx, playerY + dy) === TILE.DOOR) {
             nearDoor = true;
             break;
           }
         }
         enabled = nearDoor;
-      } else if (def.actionOnProximity === 'opening') {
+      } else if (def.actionOnProximity === PROXIMITY.OPENING) {
         // Check for closeable openings: adjacent floor tiles with 2+ wall neighbors (doorways)
         const adjacent = [{ dx: 0, dy: -1 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }, { dx: 1, dy: 0 }];
         let nearOpening = false;
         for (const { dx, dy } of adjacent) {
           const ax = playerX + dx, ay = playerY + dy;
-          if (getTileAt(tilesDict, ax, ay) !== '.') continue;
+          if (getTileAt(tilesDict, ax, ay) !== TILE.FLOOR) continue;
           let wallCount = 0;
-          if (getTileAt(tilesDict, ax, ay - 1) === '#') wallCount++;
-          if (getTileAt(tilesDict, ax, ay + 1) === '#') wallCount++;
-          if (getTileAt(tilesDict, ax - 1, ay) === '#') wallCount++;
-          if (getTileAt(tilesDict, ax + 1, ay) === '#') wallCount++;
+          if (getTileAt(tilesDict, ax, ay - 1) === TILE.WALL) wallCount++;
+          if (getTileAt(tilesDict, ax, ay + 1) === TILE.WALL) wallCount++;
+          if (getTileAt(tilesDict, ax - 1, ay) === TILE.WALL) wallCount++;
+          if (getTileAt(tilesDict, ax + 1, ay) === TILE.WALL) wallCount++;
           if (wallCount >= 2) { nearOpening = true; break; }
         }
         enabled = nearOpening;
-      } else if (def.actionOnProximity === 'floor') {
+      } else if (def.actionOnProximity === PROXIMITY.FLOOR) {
         const currentTile = getTileAt(tilesDict, playerX, playerY);
-        enabled = (currentTile === '.' || currentTile === '@');
-      } else if (def.actionOnProximity === 'stairsUp') {
-        enabled = (getTileAt(tilesDict, playerX, playerY) === '<');
-      } else if (def.actionOnProximity === 'stairsDown') {
-        enabled = (getTileAt(tilesDict, playerX, playerY) === '>');
+        enabled = (currentTile === TILE.FLOOR || currentTile === TILE.PLAYER);
+      } else if (def.actionOnProximity === PROXIMITY.STAIRS_UP) {
+        enabled = (getTileAt(tilesDict, playerX, playerY) === TILE.STAIRS_UP);
+      } else if (def.actionOnProximity === PROXIMITY.STAIRS_DOWN) {
+        enabled = (getTileAt(tilesDict, playerX, playerY) === TILE.STAIRS_DOWN);
       } else {
         // Unknown proximity defaults to disabled or custom handling
         enabled = false;

@@ -1,5 +1,5 @@
 const grpc = require('@grpc/grpc-js');
-const { RoomService, DiceService, createLogger } = require('@wow/proto');
+const { RoomService, DiceService, createLogger, ROOM_DESCRIPTIONS, TILE } = require('@wow/proto');
 
 const log = createLogger('RoomService');
 const PORT = process.env.ROOM_PORT || 50056;
@@ -10,16 +10,6 @@ const diceClient = new DiceService(
   grpc.credentials.createInsecure()
 );
 
-const ROOM_DESCRIPTIONS = [
-  'A damp, moldy stone chamber.',
-  'A forgotten armory with rusted racks.',
-  'A completely bare, perfectly square room.',
-  'A room smelling faintly of ozone and old blood.',
-  'A ruined shrine dedicated to an unknown deity.',
-  'An opulent bedroom, now thick with dust.',
-  'A collapsed library with burned pages.',
-  'A strange room with a geometric mosaic floor.'
-];
 
 const CORRIDOR_DESCRIPTIONS = [
   'A narrow, rough-hewn tunnel.',
@@ -75,9 +65,9 @@ async function generateRoom(call, callback) {
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         if (y === 0 || y === height - 1 || x === 0 || x === width - 1) {
-          localTiles[`${x},${y}`] = '#';
+          localTiles[`${x},${y}`] = TILE.WALL;
         } else {
-          localTiles[`${x},${y}`] = '.';
+          localTiles[`${x},${y}`] = TILE.FLOOR;
         }
       }
     }
@@ -128,7 +118,7 @@ async function generateRoom(call, callback) {
           if (!tooCloseToExisting(dx, dy)) {
             placedDoors.push({ x: dx, y: dy });
             doors.push({ x: dx, y: dy });
-            localTiles[`${dx},${dy}`] = '+';
+            localTiles[`${dx},${dy}`] = TILE.DOOR;
             placed = true;
           }
         }
@@ -201,11 +191,11 @@ async function generateCorridor(call, callback) {
     // Open both ends of the corridor (floor, not doors or walls)
     // so it connects seamlessly to adjacent rooms/corridors
     if (isVertical) {
-      localTiles[`1,0`] = '.';
-      localTiles[`1,${h - 1}`] = '.';
+      localTiles[`1,0`] = TILE.FLOOR;
+      localTiles[`1,${h - 1}`] = TILE.FLOOR;
     } else {
-      localTiles[`0,1`] = '.';
-      localTiles[`${w - 1},1`] = '.';
+      localTiles[`0,1`] = TILE.FLOOR;
+      localTiles[`${w - 1},1`] = TILE.FLOOR;
     }
 
     // Roll for description
