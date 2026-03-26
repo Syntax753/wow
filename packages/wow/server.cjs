@@ -824,11 +824,22 @@ const server = http.createServer(async (req, res) => {
         heroClass: body.heroClass || 'Fighter',
       }, rootSpan);
 
-      // Start a fresh game (this resets world + regenerates the map)
-      const gameRes = await grpcCall(gameClient, 'game-service', 'startGame', {
-        level: 0,
-        campaignId: body.campaignId || 'default',
-      }, rootSpan);
+      // Check if a world already exists (another player may be in it)
+      const existingWorld = await grpcCall(worldClient, 'world-service', 'getWorldState', { playerId: getPlayerId(req) }, rootSpan);
+      let existingTiles = {};
+      try { existingTiles = JSON.parse(existingWorld.tilesJson || '{}'); } catch {}
+
+      let gameRes;
+      if (Object.keys(existingTiles).length > 0) {
+        // World exists — join it instead of regenerating
+        gameRes = await grpcCall(gameClient, 'game-service', 'getGameState', {}, rootSpan);
+      } else {
+        // No world — generate a fresh one
+        gameRes = await grpcCall(gameClient, 'game-service', 'startGame', {
+          level: 0,
+          campaignId: body.campaignId || 'default',
+        }, rootSpan);
+      }
 
       // Move hero to spawn position
       let spawnPositions = [];
