@@ -633,7 +633,6 @@ const server = http.createServer(async (req, res) => {
 
     // === Login & Players ===
     } else if (req.url === '/api/login' && req.method === 'POST') {
-      const body = await parseBody(req);
       const { name, heroClass } = body;
       const guestName = (name || 'Adventurer').slice(0, 20);
       const slug = guestName.toLowerCase().replace(/[^a-z0-9]/g, '-');
