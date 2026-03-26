@@ -34,15 +34,38 @@ const MAP_TYPES = {
     maxRooms: 12,
     minRoomSize: 4,
     maxRoomSize: 10,
-    floorColor: null,
-    wallColor: null,
-    corridorColor: null,
-    doorColor: null,
+    floorColor: '#374151',
+    wallColor: '#6b7280',
+    corridorColor: '#4b5563',
+    doorColor: '#ca8a04',
     stairsUp: 2,
     stairsDown: 2,
     hasCorridors: true,
   },
 };
+
+// ── Deterministic tile color variation ─────────────────────────────────
+// Uses prime-based hash of world coordinates to produce subtle tint shifts.
+// Same (x,y) always produces the same variation, so revisiting rooms is consistent.
+const VARIATION_RANGE = 18; // max +/- shift per RGB channel
+const PRIME_X = 73856093;
+const PRIME_Y = 19349663;
+const PRIME_MIX = 83492791;
+
+function _varyColor(hexColor, coord) {
+  const [x, y] = coord.split(',').map(Number);
+  // Hash world coordinates with primes — deterministic per tile
+  const hash = Math.abs((x * PRIME_X) ^ (y * PRIME_Y) ^ ((x + y) * PRIME_MIX));
+  // Extract 3 independent offsets from the hash for R, G, B
+  const rOff = (hash % (VARIATION_RANGE * 2 + 1)) - VARIATION_RANGE;
+  const gOff = (Math.floor(hash / 37) % (VARIATION_RANGE * 2 + 1)) - VARIATION_RANGE;
+  const bOff = (Math.floor(hash / 1369) % (VARIATION_RANGE * 2 + 1)) - VARIATION_RANGE;
+  // Parse base hex color and apply offsets, clamping to 0-255
+  const r = Math.max(0, Math.min(255, parseInt(hexColor.slice(1, 3), 16) + rOff));
+  const g = Math.max(0, Math.min(255, parseInt(hexColor.slice(3, 5), 16) + gOff));
+  const b = Math.max(0, Math.min(255, parseInt(hexColor.slice(5, 7), 16) + bOff));
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
 
 // ── BSP Level Generation Classes ─────────────────────────────────────
 
@@ -292,24 +315,24 @@ class DungeonMap {
     log.info(`BSP generated: ${this.rooms.length} rooms in ${this.width}x${this.height} area`);
   }
 
-  /** Apply MapType colors to all tiles */
+  /** Apply MapType colors to all tiles with deterministic tint variation */
   _applyColors() {
     const cfg = this.mapTypeConfig;
     if (!cfg) return;
 
     for (const [coord, ch] of Object.entries(this.tiles)) {
-      let color = null;
-      if (ch === '.' && cfg.floorColor) color = cfg.floorColor;
-      else if (ch === '#' && cfg.wallColor) color = cfg.wallColor;
-      else if (ch === '+' && cfg.doorColor) color = cfg.doorColor;
-      if (color) this.tileColors[coord] = color;
+      let baseColor = null;
+      if (ch === '.' && cfg.floorColor) baseColor = cfg.floorColor;
+      else if (ch === '#' && cfg.wallColor) baseColor = cfg.wallColor;
+      else if (ch === '+' && cfg.doorColor) baseColor = cfg.doorColor;
+      if (baseColor) this.tileColors[coord] = _varyColor(baseColor, coord);
     }
 
     // Corridor tiles get corridorColor (overrides floorColor for corridor paths)
     if (cfg.corridorColor) {
       for (const coord of (this._corridorTiles || [])) {
         if (this.tiles[coord] === '.') {
-          this.tileColors[coord] = cfg.corridorColor;
+          this.tileColors[coord] = _varyColor(cfg.corridorColor, coord);
         }
       }
     }
