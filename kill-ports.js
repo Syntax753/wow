@@ -8,7 +8,7 @@ const ports = [
   50054, // InventoryService
   50055, // ActionService
   50056, // RoomService
-  50057, // ShadeService
+  50057, // LightService
   50058, // RenderService
   50059, // EnemyService
   50060, // WorldService

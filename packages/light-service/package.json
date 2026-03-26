@@ -1,7 +1,7 @@
 {
-  "name": "@wow/shade-service",
+  "name": "@wow/light-service",
   "version": "1.0.0",
-  "description": "Shade microservice handling raytraced visibility",
+  "description": "Light microservice handling raytraced visibility with map-type awareness",
   "main": "index.js",
   "scripts": {
     "dev": "node --watch index.js"

@@ -103,6 +103,10 @@ async function getAvailableActions(call, callback) {
       } else if (def.actionOnProximity === 'floor') {
         const currentTile = getTileAt(tilesDict, playerX, playerY);
         enabled = (currentTile === '.' || currentTile === '@');
+      } else if (def.actionOnProximity === 'stairsUp') {
+        enabled = (getTileAt(tilesDict, playerX, playerY) === '<');
+      } else if (def.actionOnProximity === 'stairsDown') {
+        enabled = (getTileAt(tilesDict, playerX, playerY) === '>');
       } else {
         // Unknown proximity defaults to disabled or custom handling
         enabled = false;

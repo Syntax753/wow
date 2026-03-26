@@ -1,4 +1,4 @@
-const { grpc, DiceService, DndService, RoomService, RenderService, EnemyService, ShadeService, WorldService, HeroService, InputService, GameService, createLogger } = require('@wow/proto');
+const { grpc, DiceService, DndService, RoomService, RenderService, EnemyService, LightService, WorldService, HeroService, InputService, GameService, createLogger } = require('@wow/proto');
 const crypto = require('crypto');
 
 const log = createLogger('DndService');
@@ -8,7 +8,7 @@ const DICE_SERVICE_URL = process.env.DICE_SERVICE_URL || 'localhost:50051';
 const ROOM_SERVICE_URL = process.env.ROOM_SERVICE_URL || 'localhost:50056';
 const RENDER_SERVICE_URL = process.env.RENDER_SERVICE_URL || 'localhost:50058';
 const ENEMY_SERVICE_URL = process.env.ENEMY_SERVICE_URL || 'localhost:50059';
-const SHADE_SERVICE_URL = process.env.SHADE_SERVICE_URL || 'localhost:50057';
+const LIGHT_SERVICE_URL = process.env.LIGHT_SERVICE_URL || 'localhost:50057';
 const WORLD_SERVICE_URL = process.env.WORLD_SERVICE_URL || 'localhost:50060';
 const HERO_SERVICE_URL = process.env.HERO_SERVICE_URL || 'localhost:50053';
 const INPUT_SERVICE_URL = process.env.INPUT_SERVICE_URL || 'localhost:50061';
@@ -18,7 +18,7 @@ const diceClient = new DiceService(DICE_SERVICE_URL, grpc.credentials.createInse
 const roomClient = new RoomService(ROOM_SERVICE_URL, grpc.credentials.createInsecure());
 const renderClient = new RenderService(RENDER_SERVICE_URL, grpc.credentials.createInsecure());
 const enemyClient = new EnemyService(ENEMY_SERVICE_URL, grpc.credentials.createInsecure());
-const shadeClient = new ShadeService(SHADE_SERVICE_URL, grpc.credentials.createInsecure());
+const lightClient = new LightService(LIGHT_SERVICE_URL, grpc.credentials.createInsecure());
 const worldClient = new WorldService(WORLD_SERVICE_URL, grpc.credentials.createInsecure());
 const heroClient = new HeroService(HERO_SERVICE_URL, grpc.credentials.createInsecure());
 const inputClient = new InputService(INPUT_SERVICE_URL, grpc.credentials.createInsecure());
@@ -91,7 +91,7 @@ const generateRoomAsync = makeAsyncCall(roomClient, 'GenerateRoom', 'room-servic
 const generateCorridorAsync = makeAsyncCall(roomClient, 'GenerateCorridor', 'room-service');
 const compositeLayersAsync = makeAsyncCall(renderClient, 'CompositeLayers', 'render-service');
 const processEnemiesAsync = makeAsyncCall(enemyClient, 'ProcessEnemies', 'enemy-service');
-const computeVisibilityAsync = makeAsyncCall(shadeClient, 'ComputeVisibility', 'shade-service');
+const computeVisibilityAsync = makeAsyncCall(lightClient, 'ComputeVisibility', 'light-service');
 const getWorldStateAsync = makeAsyncCall(worldClient, 'GetWorldState', 'world-service');
 const initWorldAsync = makeAsyncCall(worldClient, 'InitWorld', 'world-service');
 const placeStructureAsync = makeAsyncCall(worldClient, 'PlaceStructure', 'world-service');
@@ -106,7 +106,7 @@ const getKeymapAsync = makeAsyncCall(gameClient, 'GetKeymap', 'game-service');
 const getGameStateAsync = makeAsyncCall(gameClient, 'GetGameState', 'game-service');
 
 // ── Helper: build layers from world tiles and run render pipeline ──────
-async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, currentEnemiesJson, trace, playerId, playersJson, tileColorsJson, viewportWidth, viewportHeight) {
+async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, currentEnemiesJson, trace, playerId, playersJson, tileColorsJson, viewportWidth, viewportHeight, mapType) {
   let tilesDict;
   try { tilesDict = JSON.parse(tilesJsonStr || '{}'); } catch { tilesDict = {}; }
 
@@ -137,14 +137,15 @@ async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, c
   const layer30 = { layerType: 30, tilesJson: enemyResponse.enemyLayer?.tilesJson || '{}' };
 
   // FOV layer
-  const shadeResponse = await computeVisibilityAsync({
+  const lightResponse = await computeVisibilityAsync({
     tilesJson: tilesJsonStr,
     playerX: px,
     playerY: py,
-    visualRange: visualRange || 8
+    visualRange: visualRange || 8,
+    mapType: mapType || 'dungeon'
   }, trace);
 
-  const layer10 = { layerType: 10, tilesJson: shadeResponse.tilesJson };
+  const layer10 = { layerType: 10, tilesJson: lightResponse.tilesJson };
 
   // Determine fog-of-war ID: if playersJson has entries, it's a multiplayer session
   let allPlayers = [];
@@ -199,10 +200,14 @@ async function exploreDoor(call, callback) {
   };
 
   try {
-    // 1. Get hero effective stats for visibility
+    // 1. Get hero effective stats for visibility + map type
     const heroId = call.request.heroId || 'default';
-    const effectiveStats = await getEffectiveStatsAsync({ heroId }, trace);
+    const [effectiveStats, gameStateRes] = await Promise.all([
+      getEffectiveStatsAsync({ heroId }, trace),
+      getGameStateAsync({}, trace),
+    ]);
     const visualRange = effectiveStats.visibility || 6;
+    const mapType = gameStateRes.mapType || 'dungeon';
 
     // 2. Roll 1d20 to determine Room vs Corridor
     const typeRoll = await rollDiceAsync(['1d20'], trace);
@@ -277,7 +282,8 @@ async function exploreDoor(call, callback) {
       call.request.currentEnemiesJson,
       trace, heroId, call.request.playersJson || '[]',
       '{}',
-      call.request.viewportWidth, call.request.viewportHeight
+      call.request.viewportWidth, call.request.viewportHeight,
+      mapType
     );
 
     callback(null, {
@@ -367,7 +373,11 @@ async function computeMapModifiers(call, callback) {
       log.info(`Initialized world via game-service: ${gameRes.levelName || 'Level 0'}`);
     }
 
-    // 4. Run render pipeline with hero's effective visibility
+    // 4. Get map type for light computation
+    const gameStateForLight = await getGameStateAsync({}, trace);
+    const mapType = gameStateForLight.mapType || 'dungeon';
+
+    // 5. Run render pipeline with hero's effective visibility
     const rendered = await buildAndRender(
       tilesJsonStr, roomsJsonStr,
       px, py,
@@ -375,7 +385,8 @@ async function computeMapModifiers(call, callback) {
       call.request.currentEnemiesJson,
       trace, heroId, call.request.playersJson || '[]',
       tileColorsJson,
-      call.request.viewportWidth, call.request.viewportHeight
+      call.request.viewportWidth, call.request.viewportHeight,
+      mapType
     );
 
     const responsePayload = {
@@ -415,10 +426,14 @@ async function processInput(call, callback) {
     const { key, currentEnemiesJson, level } = call.request;
     const heroId = call.request.heroId || 'default';
 
-    // 1. Get hero position and effective stats (includes inventory bonuses)
-    const hero = await getHeroAsync({ heroId }, trace);
-    const effectiveStats = await getEffectiveStatsAsync({ heroId }, trace);
+    // 1. Get hero position, effective stats, and map type
+    const [hero, effectiveStats, gameStateForInput] = await Promise.all([
+      getHeroAsync({ heroId }, trace),
+      getEffectiveStatsAsync({ heroId }, trace),
+      getGameStateAsync({}, trace),
+    ]);
     const visualRange = effectiveStats.visibility || 6;
+    const mapType = gameStateForInput.mapType || 'dungeon';
     let px = hero.positionX ?? 0;
     let py = hero.positionY ?? 0;
 
@@ -617,7 +632,8 @@ async function processInput(call, callback) {
       currentEnemiesJson,
       trace, heroId, call.request.playersJson || '[]',
       tileColorsJson,
-      call.request.viewportWidth, call.request.viewportHeight
+      call.request.viewportWidth, call.request.viewportHeight,
+      mapType
     );
 
     callback(null, {

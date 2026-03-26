@@ -27,7 +27,7 @@ const heroProto = loadProto('hero.proto');
 const inventoryProto = loadProto('inventory.proto');
 const actionProto = loadProto('action.proto');
 const roomProto = loadProto('room.proto');
-const shadeProto = loadProto('shade.proto');
+const lightProto = loadProto('light.proto');
 const renderProto = loadProto('render.proto');
 const enemyProto = loadProto('enemy.proto');
 const worldProto = loadProto('world.proto');
@@ -43,7 +43,7 @@ module.exports = {
   inventoryProto,
   actionProto,
   roomProto,
-  shadeProto,
+  lightProto,
   renderProto,
   worldProto,
   gameProto,
@@ -53,7 +53,7 @@ module.exports = {
   InventoryService: inventoryProto.inventory.InventoryService,
   ActionService: actionProto.action.ActionService,
   RoomService: roomProto.room.RoomService,
-  ShadeService: shadeProto.shade.ShadeService,
+  LightService: lightProto.light.LightService,
   RenderService: renderProto.render.RenderService,
   EnemyService: enemyProto.enemy.EnemyService,
   WorldService: worldProto.world.WorldService,

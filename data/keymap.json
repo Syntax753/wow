@@ -9,7 +9,6 @@
   "moveSouthEast": { "key": "3", "dx": 1, "dy": 1 },
   "wait": {
     "key": "5",
-    "label": "Wait",
     "description": "Wait one turn"
   },
   "open": {
@@ -32,27 +31,26 @@
   },
   "inventory": {
     "key": "i",
-    "label": "Inventory",
     "description": "Open your inventory"
   },
   "stairsUp": {
     "key": "<",
     "label": "Go Up",
-    "description": "Ascend stairs"
+    "description": "Ascend stairs",
+    "actionOnProximity": "stairsUp"
   },
   "stairsDown": {
     "key": ">",
     "label": "Go Down",
-    "description": "Descend stairs"
+    "description": "Descend stairs",
+    "actionOnProximity": "stairsDown"
   },
   "zoomIn": {
     "key": "+",
-    "label": "Zoom In",
     "description": "Zoom in (see less, bigger tiles)"
   },
   "zoomOut": {
     "key": "-",
-    "label": "Zoom Out",
     "description": "Zoom out (see more, smaller tiles)"
   }
 }

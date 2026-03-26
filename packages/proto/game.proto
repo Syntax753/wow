@@ -69,6 +69,7 @@ message GetGameStateResponse {
   string settings_json = 5;
   TraceInfo trace = 6;
   string spawn_positions_json = 7;
+  string map_type = 8;
 }
 
 message GetSettingsRequest {

@@ -164,6 +164,7 @@ function getGameState(call, callback) {
     settingsJson: JSON.stringify(settings),
     trace,
     spawnPositionsJson: JSON.stringify(gameState.spawnPositions || []),
+    mapType: gameState.mapType || 'dungeon',
   });
 }
 
@@ -257,6 +258,7 @@ async function startGame(call, callback) {
       totalLevels: campaign.levels ? campaign.levels.length : 1,
       started: true,
       spawnPositions,
+      mapType,
     };
 
     log.info(`[GameService] Level generated via BSP. Spawns: ${JSON.stringify(spawnPositions)}`);

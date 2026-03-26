@@ -1,32 +1,50 @@
 const grpc = require('@grpc/grpc-js');
-const { ShadeService, createLogger } = require('@wow/proto');
+const { LightService, createLogger } = require('@wow/proto');
 
-const log = createLogger('ShadeService');
-const PORT = process.env.SHADE_PORT || 50057;
+const log = createLogger('LightService');
+const PORT = process.env.LIGHT_PORT || 50057;
 
 function computeVisibility(call, callback) {
   const trace = {
     traceId: call.request.trace?.traceId,
     spanId: call.request.trace?.spanId,
     timeStart: Date.now(),
-    serviceName: 'shade-service',
+    serviceName: 'light-service',
     data: JSON.stringify({
       px: call.request.playerX,
       py: call.request.playerY,
-      radius: call.request.visualRange
+      radius: call.request.visualRange,
+      mapType: call.request.mapType
     }),
     subSpans: []
   };
 
   try {
-    const { tilesJson, playerX: px, playerY: py, visualRange } = call.request;
-    const radius = visualRange > 0 ? visualRange : 6; // default to 6 base visibility
+    const { tilesJson, playerX: px, playerY: py, visualRange, mapType } = call.request;
+    const radius = visualRange > 0 ? visualRange : 6;
 
     let tilesDict;
-    try { tilesDict = JSON.parse(tilesJson || "{}"); } catch { tilesDict = {}; }
+    try { tilesDict = JSON.parse(tilesJson || '{}'); } catch { tilesDict = {}; }
 
     const visible = new Set();
 
+    // Nature / outdoor maps: full visibility across all tiles
+    if (mapType === 'nature') {
+      for (const coord of Object.keys(tilesDict)) {
+        if (tilesDict[coord] !== ' ') visible.add(coord);
+      }
+
+      log.debug(`Full visibility (nature) at (${px},${py}), ${visible.size} tiles visible`);
+
+      callback(null, {
+        layerType: 10,
+        tilesJson: JSON.stringify([...visible]),
+        trace
+      });
+      return;
+    }
+
+    // Dungeon / indoor maps: Bresenham raycast with light radius
     function getTile(x, y) {
       return tilesDict[`${x},${y}`] || ' ';
     }
@@ -45,21 +63,17 @@ function computeVisibility(call, callback) {
       let cy = y0;
 
       while (true) {
-        // Enforce visual radius (Chebyshev distance)
+        // Enforce light radius (Chebyshev distance)
         if (Math.abs(cx - px) > radius || Math.abs(cy - py) > radius) break;
 
         const t = getTile(cx, cy);
         visible.add(`${cx},${cy}`);
 
         // Walls block further vision but are themselves visible
-        if (t === '#' && !(cx === x0 && cy === y0)) {
-          break;
-        }
+        if (t === '#' && !(cx === x0 && cy === y0)) break;
 
         // Unknown/empty space beyond the map also blocks
-        if (t === ' ' && !(cx === x0 && cy === y0)) {
-          break;
-        }
+        if (t === ' ' && !(cx === x0 && cy === y0)) break;
 
         if (cx === x1 && cy === y1) break;
         let e2 = 2 * err;
@@ -83,13 +97,11 @@ function computeVisibility(call, callback) {
       castRay(px, py, maxX, y);
     }
 
-    // Stringify the array of coordinate strings
-    const visibleCoordsJson = JSON.stringify([...visible]);
-    log.debug(`Computed FOV at (${px},${py}), ${visible.size} tiles visible`);
+    log.debug(`Computed FOV (dungeon) at (${px},${py}), ${visible.size} tiles visible`);
 
     callback(null, {
       layerType: 10,
-      tilesJson: visibleCoordsJson,
+      tilesJson: JSON.stringify([...visible]),
       trace
     });
   } catch (err) {
@@ -100,7 +112,7 @@ function computeVisibility(call, callback) {
 
 function main() {
   const server = new grpc.Server();
-  server.addService(ShadeService.service, { computeVisibility });
+  server.addService(LightService.service, { computeVisibility });
   server.bindAsync(
     `0.0.0.0:${PORT}`,
     grpc.ServerCredentials.createInsecure(),
