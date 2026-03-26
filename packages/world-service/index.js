@@ -4,11 +4,42 @@ const { WorldService, createLogger } = require('@wow/proto');
 const log = createLogger('WorldService');
 const PORT = process.env.WORLD_SERVICE_PORT || 50060;
 
-// ── Authoritative world state (in-memory) ──────────────────────────────
-let worldTiles = {};     // {"x,y": char}
-let worldTileColors = {}; // {"x,y": "#hexcolor"}
-let worldRooms = [];     // [{x, y, width, height, description, region}]
+// ── Authoritative world state (in-memory, per dungeon level) ──────────
+// Each level is stored independently so multiple players can be on different levels.
+const levelStates = new Map(); // level → { tiles, tileColors, rooms }
 let revealedTilesPerPlayer = {};  // { [playerId]: Set of "x,y" coords }
+
+// Active level accessors — delegates to per-level storage
+let activeLevel = 0;
+
+function getLevelState(level) {
+  const lvl = level ?? activeLevel;
+  if (!levelStates.has(lvl)) {
+    levelStates.set(lvl, { tiles: {}, tileColors: {}, rooms: [] });
+  }
+  return levelStates.get(lvl);
+}
+
+// Backward-compatible globals that proxy to active level
+// These are used throughout the file — we redefine them as getters
+let worldTiles = {};
+let worldTileColors = {};
+let worldRooms = [];
+
+function setActiveLevel(level) {
+  activeLevel = level;
+  const state = getLevelState(level);
+  worldTiles = state.tiles;
+  worldTileColors = state.tileColors;
+  worldRooms = state.rooms;
+}
+
+function syncBackToLevel() {
+  const state = getLevelState(activeLevel);
+  state.tiles = worldTiles;
+  state.tileColors = worldTileColors;
+  state.rooms = worldRooms;
+}
 
 // ── MapType Configuration ────────────────────────────────────────────
 const MAP_TYPES = {
@@ -736,6 +767,7 @@ function placeStructure(call, callback) {
   };
 
   try {
+    setActiveLevel(call.request.dungeonLevel || activeLevel);
     const { structureType, width, height, description, anchorX, anchorY, direction } = call.request;
     const doors = call.request.doors || [];
 
@@ -854,6 +886,7 @@ function placeStructure(call, callback) {
       }
     }
 
+    syncBackToLevel();
     callback(null, {
       fitSuccess,
       originX,
@@ -881,6 +914,8 @@ function getWorldState(call, callback) {
   };
 
   const playerId = call.request.playerId || 'default';
+  const dungeonLevel = call.request.dungeonLevel || 0;
+  setActiveLevel(dungeonLevel);
   const revealed = getPlayerRevealed(playerId);
   callback(null, {
     tilesJson: JSON.stringify(worldTiles),
@@ -993,11 +1028,22 @@ function resetWorld(call, callback) {
     subSpans: []
   };
 
-  worldTiles = {};
-  worldTileColors = {};
-  worldRooms = [];
-  revealedTilesPerPlayer = {};
-  log.debug('World state reset');
+  const dungeonLevel = call.request.dungeonLevel;
+  if (dungeonLevel !== undefined && dungeonLevel >= 0) {
+    // Reset specific level
+    levelStates.delete(dungeonLevel);
+    setActiveLevel(dungeonLevel);
+    log.debug(`Level ${dungeonLevel} state reset`);
+  } else {
+    // Reset all levels
+    levelStates.clear();
+    worldTiles = {};
+    worldTileColors = {};
+    worldRooms = [];
+    revealedTilesPerPlayer = {};
+    activeLevel = 0;
+    log.debug('All world state reset');
+  }
 
   callback(null, { success: true, trace });
 }
@@ -1014,8 +1060,10 @@ function setTile(call, callback) {
     subSpans: []
   };
 
+  setActiveLevel(call.request.dungeonLevel || activeLevel);
   const { x, y, tileChar } = call.request;
   worldTiles[`${x},${y}`] = tileChar;
+  syncBackToLevel();
   log.debug(`SetTile: (${x},${y}) = '${tileChar}'`);
 
   callback(null, {
@@ -1066,11 +1114,14 @@ function generateLevel(call, callback) {
     let regions = [];
     try { regions = JSON.parse(call.request.regionsJson || '[]'); } catch {}
 
-    // Clear world state
+    // Set active level from request
+    const dungeonLevel = call.request.dungeonLevel || 0;
+    setActiveLevel(dungeonLevel);
+
+    // Clear this level's state
     worldTiles = {};
     worldTileColors = {};
     worldRooms = [];
-    revealedTilesPerPlayer = {};
 
     // Generate via BSP
     const dungeon = new DungeonMap(width, height, gridSize);
@@ -1080,6 +1131,7 @@ function generateLevel(call, callback) {
     worldTiles = dungeon.tiles;
     worldTileColors = dungeon.tileColors;
     worldRooms = dungeon.rooms.map(r => r.toJSON());
+    syncBackToLevel();
 
     // Build spawn positions from first N rooms
     const spawnPositions = [];

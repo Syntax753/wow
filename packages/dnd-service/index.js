@@ -645,12 +645,25 @@ async function processInput(call, callback) {
       const newLevel = inputResult.action === 'stairs_down' ? currentLevel + 1 : Math.max(0, currentLevel - 1);
 
       if (newLevel !== currentLevel) {
-        // Reset world and generate new level
-        await resetWorldAsync({}, trace);
-        const gameRes = await startGameAsync({ level: newLevel, campaignId: currentGameState.campaignId || 'default' }, trace);
+        // Check if target level already exists (another player may be there)
+        const targetWorld = await getWorldStateAsync({ playerId: heroId, dungeonLevel: newLevel }, trace);
+        let targetTiles = {};
+        try { targetTiles = JSON.parse(targetWorld.tilesJson || '{}'); } catch {}
 
-        // Fetch new world state
-        const newWorldState = await getWorldStateAsync({ playerId: heroId }, trace);
+        let gameRes;
+        if (Object.keys(targetTiles).length > 0) {
+          // Level exists — join it
+          gameRes = await getGameStateAsync({}, trace);
+          // Update game-service's current level tracking for this transition
+          await startGameAsync({ level: newLevel, campaignId: currentGameState.campaignId || 'default' }, trace);
+          gameRes = await getGameStateAsync({}, trace);
+        } else {
+          // Level doesn't exist — generate it
+          gameRes = await startGameAsync({ level: newLevel, campaignId: currentGameState.campaignId || 'default' }, trace);
+        }
+
+        // Fetch the level's world state
+        const newWorldState = await getWorldStateAsync({ playerId: heroId, dungeonLevel: newLevel }, trace);
         tilesJsonStr = newWorldState.tilesJson || '{}';
         roomsJsonStr = newWorldState.roomsJson || '[]';
         tileColorsJson = newWorldState.tileColorsJson || '{}';

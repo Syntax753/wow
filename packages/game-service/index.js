@@ -85,6 +85,7 @@ function makeAsyncCall(client, method, serviceName) {
 }
 
 const generateLevelAsync = makeAsyncCall(worldClient, 'GenerateLevel', 'world-service');
+const getWorldStateAsync = makeAsyncCall(worldClient, 'GetWorldState', 'world-service');
 
 // ── Campaign loading ─────────────────────────────────────────────────
 
@@ -233,22 +234,36 @@ async function startGame(call, callback) {
     const maxPlayers = call.request.maxPlayers || 4;
     const difficulty = levelConfig.difficulty || (level + 1);
 
-    // Delegate level generation to world-service BSP
+    // Check if level already exists in world-service (multiplayer persistence)
     const mapType = levelConfig.mapType || 'dungeon';
-    const levelRes = await generateLevelAsync({
-      width: levelConfig.width || 0,   // 0 = use MapType default
-      height: levelConfig.height || 0,
-      requiredRooms: levelConfig.maxRooms || 0,
-      difficulty,
-      minRoomSize: 0,  // 0 = use MapType default
-      maxRoomSize: 0,
-      maxPlayers,
-      gridSize: 2,
-      regionsJson: JSON.stringify(levelConfig.regions || []),
-      mapType,
-    }, trace);
+    let existingWorld;
+    try {
+      existingWorld = await getWorldStateAsync({ dungeonLevel: level }, trace);
+    } catch { existingWorld = null; }
+    let existingTiles = {};
+    try { existingTiles = JSON.parse(existingWorld?.tilesJson || '{}'); } catch {}
 
-    const spawnPositions = JSON.parse(levelRes.spawnPositionsJson || '[]');
+    let spawnPositions;
+    if (Object.keys(existingTiles).length > 0) {
+      // Level already exists — reuse it, just update game state
+      spawnPositions = gameState.spawnPositions || [{ x: 0, y: 0 }];
+    } else {
+      // Generate new level via BSP
+      const levelRes = await generateLevelAsync({
+        width: levelConfig.width || 0,
+        height: levelConfig.height || 0,
+        requiredRooms: levelConfig.maxRooms || 0,
+        difficulty,
+        minRoomSize: 0,
+        maxRoomSize: 0,
+        maxPlayers,
+        gridSize: 2,
+        regionsJson: JSON.stringify(levelConfig.regions || []),
+        mapType,
+        dungeonLevel: level,
+      }, trace);
+      spawnPositions = JSON.parse(levelRes.spawnPositionsJson || '[]');
+    }
 
     // Update game state
     gameState = {

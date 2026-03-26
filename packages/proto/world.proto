@@ -39,6 +39,7 @@ message PlaceStructureRequest {
   int32 anchor_y = 8;
   string direction = 9;
   TraceInfo trace = 10;
+  int32 dungeon_level = 11;
 }
 
 message PlaceStructureResponse {
@@ -54,6 +55,7 @@ message PlaceStructureResponse {
 message GetWorldStateRequest {
   TraceInfo trace = 1;
   string player_id = 2;
+  int32 dungeon_level = 3;
 }
 
 message GetWorldStateResponse {
@@ -94,6 +96,7 @@ message InitWorldResponse {
 
 message ResetWorldRequest {
   TraceInfo trace = 1;
+  int32 dungeon_level = 2;
 }
 
 message ResetWorldResponse {
@@ -106,6 +109,7 @@ message SetTileRequest {
   int32 y = 2;
   string tile_char = 3;
   TraceInfo trace = 4;
+  int32 dungeon_level = 5;
 }
 
 message SetTileResponse {
@@ -127,6 +131,7 @@ message GenerateLevelRequest {
   string regions_json = 9;
   TraceInfo trace = 10;
   string map_type = 11;
+  int32 dungeon_level = 12;
 }
 
 message GenerateLevelResponse {
