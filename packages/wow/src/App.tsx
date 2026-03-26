@@ -56,6 +56,8 @@ function App() {
   const [isMultiplayer, setIsMultiplayer] = useState(false)
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
   const [, setAuthProvider] = useState<'github' | 'guest' | null>(null)
+  const [showGuestModal, setShowGuestModal] = useState(false)
+  const [guestNameInput, setGuestNameInput] = useState('')
 
   // Zoom system
   const [zoomMode, setZoomMode] = useState<'fixed' | 'dynamic' | 'adaptive'>('dynamic')
@@ -519,17 +521,7 @@ function App() {
               className="splash-btn"
               disabled={serviceStatus !== 'online'}
               style={{ opacity: serviceStatus !== 'online' ? 0.5 : 1 }}
-              onClick={async () => {
-                const res = await login('Adventurer')
-                if (res.data) {
-                  setPlayerId(res.data.playerId)
-                  setPlayerName(res.data.name)
-                  setAuthProvider('guest')
-                  document.cookie = `wow_player_id=${encodeURIComponent(res.data.playerId)}; path=/; max-age=604800; samesite=lax`
-                  document.cookie = `wow_player_name=${encodeURIComponent(res.data.name)}; path=/; max-age=604800; samesite=lax`
-                  setScreen('splash')
-                }
-              }}
+              onClick={() => { setGuestNameInput(''); setShowGuestModal(true) }}
             >
               Play as Guest
             </button>
@@ -550,6 +542,58 @@ function App() {
             Service Status: <span className={`status-dot ${serviceStatus}`} />
           </div>
         </div>
+        {showGuestModal && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}
+            onClick={() => setShowGuestModal(false)}>
+            <div style={{ background: 'var(--terminal-bg, #1a1a2e)', border: '1px solid var(--terminal-accent)', padding: '32px', borderRadius: '8px', minWidth: '320px' }}
+              onClick={e => e.stopPropagation()}>
+              <div style={{ color: 'var(--terminal-accent)', fontSize: '16px', marginBottom: '20px', textAlign: 'center' }}>Enter your name</div>
+              <input
+                autoFocus
+                type="text"
+                maxLength={20}
+                placeholder="Adventurer"
+                value={guestNameInput}
+                onChange={e => setGuestNameInput(e.target.value)}
+                onKeyDown={async e => {
+                  if (e.key === 'Enter') {
+                    const name = guestNameInput.trim() || 'Adventurer'
+                    const res = await login(name)
+                    if (res.data) {
+                      setPlayerId(res.data.playerId)
+                      setPlayerName(res.data.name)
+                      setAuthProvider('guest')
+                      document.cookie = `wow_player_id=${encodeURIComponent(res.data.playerId)}; path=/; max-age=604800; samesite=lax`
+                      document.cookie = `wow_player_name=${encodeURIComponent(res.data.name)}; path=/; max-age=604800; samesite=lax`
+                      setShowGuestModal(false)
+                      setScreen('splash')
+                    }
+                  }
+                }}
+                style={{ width: '100%', padding: '10px', background: 'transparent', border: '1px solid var(--terminal-dim)', color: 'var(--terminal-text, #eee)', fontFamily: 'var(--font-mono)', fontSize: '14px', borderRadius: '4px', boxSizing: 'border-box' }}
+              />
+              <button
+                className="splash-btn"
+                style={{ width: '100%', marginTop: '16px' }}
+                onClick={async () => {
+                  const name = guestNameInput.trim() || 'Adventurer'
+                  const res = await login(name)
+                  if (res.data) {
+                    setPlayerId(res.data.playerId)
+                    setPlayerName(res.data.name)
+                    setAuthProvider('guest')
+                    document.cookie = `wow_player_id=${encodeURIComponent(res.data.playerId)}; path=/; max-age=604800; samesite=lax`
+                    document.cookie = `wow_player_name=${encodeURIComponent(res.data.name)}; path=/; max-age=604800; samesite=lax`
+                    setShowGuestModal(false)
+                    setScreen('splash')
+                  }
+                }}
+              >
+                Enter Dungeon
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
