@@ -35,7 +35,8 @@
       "Bash(grep -r process.env /c/Users/synt_/dev/wow/packages/wow --include=*.cjs --include=*.ts --include=*.tsx)",
       "Bash(python3 -c \":*)",
       "Bash(gcloud run:*)",
-      "Bash(gcloud artifacts:*)"
+      "Bash(gcloud artifacts:*)",
+      "Bash(gcloud iap:*)"
     ]
   }
 }
