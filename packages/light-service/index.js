@@ -69,8 +69,8 @@ function computeVisibility(call, callback) {
         const t = getTile(cx, cy);
         visible.add(`${cx},${cy}`);
 
-        // Walls block further vision but are themselves visible
-        if (t === '#' && !(cx === x0 && cy === y0)) break;
+        // Walls and alcoves block further vision but are themselves visible
+        if ((t === '#' || t === '\u00ac') && !(cx === x0 && cy === y0)) break;
 
         // Unknown/empty space beyond the map also blocks
         if (t === ' ' && !(cx === x0 && cy === y0)) break;
@@ -97,7 +97,47 @@ function computeVisibility(call, callback) {
       castRay(px, py, maxX, y);
     }
 
-    log.debug(`Computed FOV (dungeon) at (${px},${py}), ${visible.size} tiles visible`);
+    // Candle light sources — each emits its own small raycast
+    let candlePositions = [];
+    try { candlePositions = JSON.parse(call.request.candlePositionsJson || '[]'); } catch {}
+    for (const candle of candlePositions) {
+      const cr = candle.radius || 3;
+      const cx0 = candle.x;
+      const cy0 = candle.y;
+      // Only process candles within reasonable range of the viewport
+      if (Math.abs(cx0 - px) > radius + cr + 5 || Math.abs(cy0 - py) > radius + cr + 5) continue;
+
+      visible.add(`${cx0},${cy0}`);
+      const cMinX = cx0 - cr, cMaxX = cx0 + cr, cMinY = cy0 - cr, cMaxY = cy0 + cr;
+
+      function castCandleRay(x0, y0, x1, y1) {
+        let dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+        let sx = (x0 < x1) ? 1 : -1, sy = (y0 < y1) ? 1 : -1;
+        let err = dx - dy, lx = x0, ly = y0;
+        while (true) {
+          if (Math.abs(lx - cx0) > cr || Math.abs(ly - cy0) > cr) break;
+          const t = getTile(lx, ly);
+          visible.add(`${lx},${ly}`);
+          if (t === '#' && !(lx === x0 && ly === y0)) break;
+          if (t === ' ' && !(lx === x0 && ly === y0)) break;
+          if (lx === x1 && ly === y1) break;
+          let e2 = 2 * err;
+          if (e2 > -dy) { err -= dy; lx += sx; }
+          if (e2 < dx) { err += dx; ly += sy; }
+        }
+      }
+
+      for (let x = cMinX; x <= cMaxX; x++) {
+        castCandleRay(cx0, cy0, x, cMinY);
+        castCandleRay(cx0, cy0, x, cMaxY);
+      }
+      for (let y = cMinY + 1; y < cMaxY; y++) {
+        castCandleRay(cx0, cy0, cMinX, y);
+        castCandleRay(cx0, cy0, cMaxX, y);
+      }
+    }
+
+    log.debug(`Computed FOV (dungeon) at (${px},${py}), ${visible.size} tiles visible, ${candlePositions.length} candles`);
 
     callback(null, {
       layerType: 10,

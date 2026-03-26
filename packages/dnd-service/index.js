@@ -106,7 +106,7 @@ const getKeymapAsync = makeAsyncCall(gameClient, 'GetKeymap', 'game-service');
 const getGameStateAsync = makeAsyncCall(gameClient, 'GetGameState', 'game-service');
 
 // ── Helper: build layers from world tiles and run render pipeline ──────
-async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, currentEnemiesJson, trace, playerId, playersJson, tileColorsJson, viewportWidth, viewportHeight, mapType) {
+async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, currentEnemiesJson, trace, playerId, playersJson, tileColorsJson, viewportWidth, viewportHeight, mapType, candlePositionsJson) {
   let tilesDict;
   try { tilesDict = JSON.parse(tilesJsonStr || '{}'); } catch { tilesDict = {}; }
 
@@ -114,7 +114,7 @@ async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, c
   const baseMap = {};
   const interactables = {};
   for (const [coord, ch] of Object.entries(tilesDict)) {
-    if (ch === '#' || ch === '.' || ch === ' ') {
+    if (ch === '#' || ch === '.' || ch === ' ' || ch === '\u00ac') {
       baseMap[coord] = ch;
     } else {
       baseMap[coord] = '.';
@@ -142,7 +142,8 @@ async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, c
     playerX: px,
     playerY: py,
     visualRange: visualRange || 8,
-    mapType: mapType || 'dungeon'
+    mapType: mapType || 'dungeon',
+    candlePositionsJson: candlePositionsJson || '[]'
   }, trace);
 
   const layer10 = { layerType: 10, tilesJson: lightResponse.tilesJson };
@@ -283,7 +284,7 @@ async function exploreDoor(call, callback) {
       trace, heroId, call.request.playersJson || '[]',
       '{}',
       call.request.viewportWidth, call.request.viewportHeight,
-      mapType
+      mapType, '[]'
     );
 
     callback(null, {
@@ -342,6 +343,7 @@ async function computeMapModifiers(call, callback) {
     let tilesJsonStr = worldState.tilesJson || '{}';
     let roomsJsonStr = worldState.roomsJson || '[]';
     let tileColorsJson = worldState.tileColorsJson || '{}';
+    let candlePositionsJson = worldState.candlePositionsJson || '[]';
 
     let tilesDict;
     try { tilesDict = JSON.parse(tilesJsonStr); } catch { tilesDict = {}; }
@@ -386,7 +388,7 @@ async function computeMapModifiers(call, callback) {
       trace, heroId, call.request.playersJson || '[]',
       tileColorsJson,
       call.request.viewportWidth, call.request.viewportHeight,
-      mapType
+      mapType, candlePositionsJson
     );
 
     const responsePayload = {
@@ -442,6 +444,7 @@ async function processInput(call, callback) {
     let tilesJsonStr = worldState.tilesJson || '{}';
     let roomsJsonStr = worldState.roomsJson || '[]';
     let tileColorsJson = worldState.tileColorsJson || '{}';
+    let candlePositionsJson = worldState.candlePositionsJson || '[]';
 
     let tilesDict;
     try { tilesDict = JSON.parse(tilesJsonStr); } catch { tilesDict = {}; }
@@ -484,7 +487,7 @@ async function processInput(call, callback) {
         const ny = py + actionDef.dy;
         const target = getTile(nx, ny);
 
-        if (target === '#') {
+        if (target === '#' || target === '\u00ac') {
           inputResult = { newX: px, newY: py, action: 'blocked', message: 'Ouch!', positionChanged: false };
         } else if (target === ' ') {
           inputResult = { newX: px, newY: py, action: 'blocked', message: '', positionChanged: false };
@@ -695,7 +698,7 @@ async function processInput(call, callback) {
       trace, heroId, call.request.playersJson || '[]',
       tileColorsJson,
       call.request.viewportWidth, call.request.viewportHeight,
-      mapType
+      mapType, candlePositionsJson
     );
 
     callback(null, {

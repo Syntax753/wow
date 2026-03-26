@@ -64,6 +64,7 @@ message GetWorldStateResponse {
   string revealed_json = 4;
   TraceInfo trace = 3;
   string tile_colors_json = 5;
+  string candle_positions_json = 6;
 }
 
 message RevealTilesRequest {

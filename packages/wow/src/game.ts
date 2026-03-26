@@ -8,6 +8,10 @@ export const TILE = {
   CORRIDOR: ':',
   STAIRS_UP: '<',
   STAIRS_DOWN: '>',
+  BUSH: '"',
+  FLOWERS: '*',
+  ALCOVE: '\u00ac',
+  CANDLE: '\u00b0',
   UNKNOWN: ' ',
 } as const;
 
@@ -287,6 +291,10 @@ export function getTileClass(ch: string): string {
     case TILE.CORRIDOR: return 'ch-corridor';
     case TILE.STAIRS_UP: return 'ch-stairs';
     case TILE.STAIRS_DOWN: return 'ch-stairs';
+    case TILE.BUSH: return 'ch-bush';
+    case TILE.FLOWERS: return 'ch-flowers';
+    case TILE.ALCOVE: return 'ch-alcove';
+    case TILE.CANDLE: return 'ch-candle';
     default: return 'ch-unknown';
   }
 }

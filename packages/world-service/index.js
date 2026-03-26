@@ -6,7 +6,7 @@ const PORT = process.env.WORLD_SERVICE_PORT || 50060;
 
 // ── Authoritative world state (in-memory, per dungeon level) ──────────
 // Each level is stored independently so multiple players can be on different levels.
-const levelStates = new Map(); // level → { tiles, tileColors, rooms }
+const levelStates = new Map(); // level → { tiles, tileColors, rooms, candlePositions }
 let revealedTilesPerPlayer = {};  // { [playerId]: Set of "x,y" coords }
 
 // Active level accessors — delegates to per-level storage
@@ -15,7 +15,7 @@ let activeLevel = 0;
 function getLevelState(level) {
   const lvl = level ?? activeLevel;
   if (!levelStates.has(lvl)) {
-    levelStates.set(lvl, { tiles: {}, tileColors: {}, rooms: [] });
+    levelStates.set(lvl, { tiles: {}, tileColors: {}, rooms: [], candlePositions: [] });
   }
   return levelStates.get(lvl);
 }
@@ -25,6 +25,7 @@ function getLevelState(level) {
 let worldTiles = {};
 let worldTileColors = {};
 let worldRooms = [];
+let worldCandlePositions = [];
 
 function setActiveLevel(level) {
   activeLevel = level;
@@ -32,6 +33,7 @@ function setActiveLevel(level) {
   worldTiles = state.tiles;
   worldTileColors = state.tileColors;
   worldRooms = state.rooms;
+  worldCandlePositions = state.candlePositions;
 }
 
 function syncBackToLevel() {
@@ -39,13 +41,14 @@ function syncBackToLevel() {
   state.tiles = worldTiles;
   state.tileColors = worldTileColors;
   state.rooms = worldRooms;
+  state.candlePositions = worldCandlePositions;
 }
 
 // ── MapType Configuration ────────────────────────────────────────────
 const MAP_TYPES = {
   nature: {
     name: 'Nature',
-    width: 120,   // max bounds — actual size computed dynamically
+    width: 120,
     height: 90,
     maxRooms: 3,
     minRoomSize: 8,
@@ -57,10 +60,15 @@ const MAP_TYPES = {
     stairsUp: 0,
     stairsDown: 1,
     hasCorridors: false,
+    decorations: [
+      { char: '"', name: 'bush', frequency: 0.05, where: 'nonRoom', color: '#2d5a1e' },
+      { char: '*', name: 'flowers', frequency: 0.05, where: 'nonRoom', color: '#d946ef' },
+    ],
+    lightSources: [],
   },
   dungeon: {
     name: 'Dungeon',
-    width: 120,   // max bounds
+    width: 120,
     height: 90,
     maxRooms: 12,
     minRoomSize: 4,
@@ -72,6 +80,12 @@ const MAP_TYPES = {
     stairsUp: 2,
     stairsDown: 2,
     hasCorridors: true,
+    decorations: [
+      { char: '\u00ac', name: 'alcove', frequency: 0.02, where: 'roomWall', color: '#8b7355' },
+    ],
+    lightSources: [
+      { char: '\u00b0', name: 'candle', pairedWith: 'alcove', color: '#fbbf24', radius: 3 },
+    ],
   },
 };
 
@@ -346,6 +360,9 @@ class DungeonMap {
     // Phase 8: Place staircases
     this._placeStairs();
 
+    // Phase 9: Place MapType-specific decorations
+    this._placeDecorations();
+
     log.debug(`BSP generated: ${this.rooms.length} rooms in ${this.width}x${this.height} area`);
   }
 
@@ -391,16 +408,107 @@ class DungeonMap {
     }
   }
 
+  /** Place MapType-specific decorative tiles */
+  _placeDecorations() {
+    const cfg = this.mapTypeConfig;
+    if (!cfg) return;
+    this._candlePositions = [];
+
+    const decorations = cfg.decorations || [];
+    const lightSources = cfg.lightSources || [];
+
+    // Deterministic hash for placement decisions
+    function shouldPlace(x, y, frequency) {
+      const hash = Math.abs((x * 73856093) ^ (y * 19349663));
+      return (hash % 10000) < (frequency * 10000);
+    }
+
+    // Check if a coordinate is inside any room (not on wall)
+    const isInsideRoom = (x, y) => {
+      for (const room of this.rooms) {
+        if (x > room.x && x < room.x + room.width - 1 &&
+            y > room.y && y < room.y + room.height - 1) return true;
+      }
+      return false;
+    };
+
+    // Check if a coordinate is a room wall (not corner)
+    const isRoomWall = (x, y) => {
+      for (const room of this.rooms) {
+        const isTop = y === room.y && x > room.x && x < room.x + room.width - 1;
+        const isBot = y === room.y + room.height - 1 && x > room.x && x < room.x + room.width - 1;
+        const isLeft = x === room.x && y > room.y && y < room.y + room.height - 1;
+        const isRight = x === room.x + room.width - 1 && y > room.y && y < room.y + room.height - 1;
+        if (isTop || isBot || isLeft || isRight) return room;
+      }
+      return null;
+    };
+
+    // Get interior direction from a wall tile (step toward room center)
+    const getInteriorStep = (wx, wy, room) => {
+      if (wy === room.y) return { dx: 0, dy: 1 };
+      if (wy === room.y + room.height - 1) return { dx: 0, dy: -1 };
+      if (wx === room.x) return { dx: 1, dy: 0 };
+      if (wx === room.x + room.width - 1) return { dx: -1, dy: 0 };
+      return null;
+    };
+
+    // Place nonRoom decorations (bushes, flowers on outdoor floor)
+    for (const deco of decorations.filter(d => d.where === 'nonRoom')) {
+      for (const [coord, ch] of Object.entries(this.tiles)) {
+        if (ch !== '.') continue;
+        const [x, y] = coord.split(',').map(Number);
+        if (isInsideRoom(x, y)) continue;
+        if (shouldPlace(x, y, deco.frequency)) {
+          this.tiles[coord] = deco.char;
+        }
+      }
+    }
+
+    // Place roomWall decorations (alcoves on dungeon walls)
+    for (const deco of decorations.filter(d => d.where === 'roomWall')) {
+      for (const [coord, ch] of Object.entries(this.tiles)) {
+        if (ch !== '#') continue;
+        const [x, y] = coord.split(',').map(Number);
+        const room = isRoomWall(x, y);
+        if (!room) continue;
+        if (!shouldPlace(x, y, deco.frequency)) continue;
+
+        // Place the alcove
+        this.tiles[coord] = deco.char;
+
+        // Place paired light source on adjacent interior floor
+        for (const ls of lightSources.filter(l => l.pairedWith === deco.name)) {
+          const step = getInteriorStep(x, y, room);
+          if (!step) continue;
+          const candleCoord = `${x + step.dx},${y + step.dy}`;
+          if (this.tiles[candleCoord] === '.') {
+            this.tiles[candleCoord] = ls.char;
+            this._candlePositions.push({ x: x + step.dx, y: y + step.dy, radius: ls.radius });
+          }
+        }
+      }
+    }
+
+    log.debug(`Placed decorations: ${this._candlePositions.length} candles`);
+  }
+
   /** Apply MapType colors to all tiles with deterministic tint variation */
   _applyColors() {
     const cfg = this.mapTypeConfig;
     if (!cfg) return;
+
+    // Build decoration/lightSource color lookup
+    const decoColors = {};
+    for (const deco of (cfg.decorations || [])) { decoColors[deco.char] = deco.color; }
+    for (const ls of (cfg.lightSources || [])) { decoColors[ls.char] = ls.color; }
 
     for (const [coord, ch] of Object.entries(this.tiles)) {
       let baseColor = null;
       if (ch === '.' && cfg.floorColor) baseColor = cfg.floorColor;
       else if (ch === '#' && cfg.wallColor) baseColor = cfg.wallColor;
       else if (ch === '+' && cfg.doorColor) baseColor = cfg.doorColor;
+      else if (decoColors[ch]) baseColor = decoColors[ch];
       if (baseColor) this.tileColors[coord] = _varyColor(baseColor, coord);
     }
 
@@ -922,6 +1030,7 @@ function getWorldState(call, callback) {
     roomsJson: JSON.stringify(worldRooms),
     revealedJson: JSON.stringify([...revealed]),
     tileColorsJson: JSON.stringify(worldTileColors),
+    candlePositionsJson: JSON.stringify(worldCandlePositions),
     trace
   });
 }
@@ -1131,6 +1240,7 @@ function generateLevel(call, callback) {
     worldTiles = dungeon.tiles;
     worldTileColors = dungeon.tileColors;
     worldRooms = dungeon.rooms.map(r => r.toJSON());
+    worldCandlePositions = dungeon._candlePositions || [];
     syncBackToLevel();
 
     // Build spawn positions from first N rooms

@@ -24,6 +24,7 @@ message ComputeVisibilityRequest {
   int32 visual_range = 6;
   TraceInfo trace = 7;
   string map_type = 8;
+  string candle_positions_json = 9;
 }
 
 message ComputeVisibilityResponse {
