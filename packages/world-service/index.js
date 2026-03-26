@@ -306,6 +306,9 @@ class DungeonMap {
     // Phase 6: Connect siblings with corridors
     this._connectBSP(this.root);
 
+    // Phase 6b: Ensure every room has at least one door or exit
+    this._ensureRoomExits();
+
     // Phase 7: Apply tile colors from MapType
     this._applyColors();
 
@@ -313,6 +316,48 @@ class DungeonMap {
     this._placeStairs();
 
     log.debug(`BSP generated: ${this.rooms.length} rooms in ${this.width}x${this.height} area`);
+  }
+
+  /** Ensure every room has at least one door or open exit on its perimeter */
+  _ensureRoomExits() {
+    for (const room of this.rooms) {
+      const { x, y, width, height } = room;
+
+      // Collect all wall positions and check for existing exits
+      const wallPositions = [];
+      let hasExit = false;
+
+      for (let c = x + 1; c < x + width - 1; c++) {
+        // Top wall
+        const top = this.tiles[`${c},${y}`];
+        if (top === '+' || top === '.') { hasExit = true; break; }
+        wallPositions.push({ x: c, y: y });
+        // Bottom wall
+        const bot = this.tiles[`${c},${y + height - 1}`];
+        if (bot === '+' || bot === '.') { hasExit = true; break; }
+        wallPositions.push({ x: c, y: y + height - 1 });
+      }
+
+      if (!hasExit) {
+        for (let r = y + 1; r < y + height - 1; r++) {
+          // Left wall
+          const left = this.tiles[`${x},${r}`];
+          if (left === '+' || left === '.') { hasExit = true; break; }
+          wallPositions.push({ x: x, y: r });
+          // Right wall
+          const right = this.tiles[`${x + width - 1},${r}`];
+          if (right === '+' || right === '.') { hasExit = true; break; }
+          wallPositions.push({ x: x + width - 1, y: r });
+        }
+      }
+
+      if (hasExit || wallPositions.length === 0) continue;
+
+      // No exit found — place a door on a random wall position
+      const pos = wallPositions[Math.floor(Math.random() * wallPositions.length)];
+      this.tiles[`${pos.x},${pos.y}`] = '+';
+      log.debug(`Added missing door to room at ${x},${y}: door at ${pos.x},${pos.y}`);
+    }
   }
 
   /** Apply MapType colors to all tiles with deterministic tint variation */
@@ -637,7 +682,7 @@ function tryPlaceRoom(width, height, anchorX, anchorY, wall) {
   return { rx, ry };
 }
 
-// Write room tiles into worldTiles
+// Write room tiles into worldTiles, ensuring at least one door
 function writeRoomTiles(rx, ry, width, height, doors) {
   for (let r = ry; r < ry + height; r++) {
     for (let c = rx; c < rx + width; c++) {
@@ -651,6 +696,16 @@ function writeRoomTiles(rx, ry, width, height, doors) {
   // Write doors
   for (const d of doors) {
     worldTiles[`${rx + d.x},${ry + d.y}`] = '+';
+  }
+  // Safety: if no doors were placed, add one on a random wall
+  if (!doors || doors.length === 0) {
+    if (width > 2) {
+      const dx = Math.floor(Math.random() * (width - 2)) + 1;
+      worldTiles[`${rx + dx},${ry}`] = '+';
+    } else if (height > 2) {
+      const dy = Math.floor(Math.random() * (height - 2)) + 1;
+      worldTiles[`${rx},${ry + dy}`] = '+';
+    }
   }
 }
 
