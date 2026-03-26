@@ -228,7 +228,7 @@ async function startGame(call, callback) {
     const campaign = loadCampaign(campaignId);
     const levelConfig = getLevelConfig(campaign, level);
 
-    log.info(`[GameService] Starting campaign "${campaign.name}" level ${level}: "${levelConfig.name}"`);
+    log.info(`Starting campaign "${campaign.name}" level ${level}: "${levelConfig.name}"`);
 
     const maxPlayers = call.request.maxPlayers || 4;
     const difficulty = levelConfig.difficulty || (level + 1);
@@ -261,7 +261,7 @@ async function startGame(call, callback) {
       mapType,
     };
 
-    log.info(`[GameService] Level generated via BSP. Spawns: ${JSON.stringify(spawnPositions)}`);
+    log.debug(`Level generated via BSP. Spawns: ${JSON.stringify(spawnPositions)}`);
 
     callback(null, {
       success: true,

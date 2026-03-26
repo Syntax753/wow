@@ -140,7 +140,7 @@ async function generateRoom(call, callback) {
     const descIndex = (descRoll.grandTotal - 1) % ROOM_DESCRIPTIONS.length;
     const description = ROOM_DESCRIPTIONS[descIndex];
 
-    log.info(`Generated room: ${width}x${height}, ${doors.length} doors`);
+    log.debug(`Generated room: ${width}x${height}, ${doors.length} doors`);
 
     callback(null, {
       width,
@@ -213,7 +213,7 @@ async function generateCorridor(call, callback) {
     const descIndex = (descRoll.grandTotal - 1) % CORRIDOR_DESCRIPTIONS.length;
     const description = CORRIDOR_DESCRIPTIONS[descIndex];
 
-    log.info(`Generated corridor: ${length} tiles ${direction} (${w}x${h})`);
+    log.debug(`Generated corridor: ${length} tiles ${direction} (${w}x${h})`);
 
     callback(null, {
       length,

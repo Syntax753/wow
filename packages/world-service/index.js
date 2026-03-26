@@ -312,7 +312,7 @@ class DungeonMap {
     // Phase 8: Place staircases
     this._placeStairs();
 
-    log.info(`BSP generated: ${this.rooms.length} rooms in ${this.width}x${this.height} area`);
+    log.debug(`BSP generated: ${this.rooms.length} rooms in ${this.width}x${this.height} area`);
   }
 
   /** Apply MapType colors to all tiles with deterministic tint variation */
@@ -367,7 +367,7 @@ class DungeonMap {
       if (cfg.floorColor) this.tileColors[`${pt.x},${pt.y}`] = cfg.floorColor;
     }
 
-    log.info(`Placed stairs: ${upCount} up, ${downCount} down`);
+    log.debug(`Placed stairs: ${upCount} up, ${downCount} down`);
   }
 
   /**
@@ -761,9 +761,9 @@ function placeStructure(call, callback) {
         }
         // Convert anchor door to floor (door has been opened)
         worldTiles[`${anchorX},${anchorY}`] = '.';
-        log.info(`Corridor placed: ${actualW}x${actualH} ${dir} at ${rx},${ry}`);
+        log.debug(`Corridor placed: ${actualW}x${actualH} ${dir} at ${rx},${ry}`);
       } else {
-        log.info(`Corridor placement failed at anchor ${anchorX},${anchorY}`);
+        log.debug(`Corridor placement failed at anchor ${anchorX},${anchorY}`);
       }
     } else {
       // Room placement — try up to 5 positions
@@ -789,13 +789,13 @@ function placeStructure(call, callback) {
           // Convert anchor door to floor (door has been opened)
           worldTiles[`${anchorX},${anchorY}`] = '.';
           worldRooms.push({ x: rx, y: ry, width, height, description });
-          log.info(`Room placed: ${width}x${height} at ${rx},${ry}`);
+          log.debug(`Room placed: ${width}x${height} at ${rx},${ry}`);
           break;
         }
       }
 
       if (!fitSuccess) {
-        log.info(`Room placement failed after 5 attempts at anchor ${anchorX},${anchorY}`);
+        log.debug(`Room placement failed after 5 attempts at anchor ${anchorX},${anchorY}`);
       }
     }
 
@@ -912,7 +912,7 @@ function initWorld(call, callback) {
     const playerX = 0;
     const playerY = 0;
 
-    log.info(`World initialized: ${width}x${height} room at ${rx},${ry}, player at ${playerX},${playerY}`);
+    log.debug(`World initialized: ${width}x${height} room at ${rx},${ry}, player at ${playerX},${playerY}`);
 
     callback(null, {
       tilesJson: JSON.stringify(worldTiles),
@@ -942,7 +942,7 @@ function resetWorld(call, callback) {
   worldTileColors = {};
   worldRooms = [];
   revealedTilesPerPlayer = {};
-  log.info('World state reset');
+  log.debug('World state reset');
 
   callback(null, { success: true, trace });
 }
@@ -1038,7 +1038,7 @@ function generateLevel(call, callback) {
     const playerX = spawnPositions[0]?.x || 0;
     const playerY = spawnPositions[0]?.y || 0;
 
-    log.info(`Level generated: ${dungeon.rooms.length} rooms, ${width}x${height}, player at (${playerX},${playerY})`);
+    log.debug(`Level generated: ${dungeon.rooms.length} rooms, ${width}x${height}, player at (${playerX},${playerY})`);
 
     callback(null, {
       success: true,

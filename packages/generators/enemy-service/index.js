@@ -112,7 +112,7 @@ async function generateEnemies(call, callback) {
       maxHp
     }];
 
-    log.info(`Generated ${type} for room at ${room.x},${room.y} (roll: ${roll})`);
+    log.debug(`Generated ${type} for room at ${room.x},${room.y} (roll: ${roll})`);
 
     callback(null, { enemies, trace });
   } catch (err) {

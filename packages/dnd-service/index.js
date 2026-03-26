@@ -155,13 +155,13 @@ async function buildAndRender(tilesJsonStr, roomsJsonStr, px, py, visualRange, c
 
   // Persist visible tiles: always save to player's own set AND shared set in multiplayer
   await revealTilesAsync({
-    visibleCoordsJson: shadeResponse.tilesJson,
+    visibleCoordsJson: lightResponse.tilesJson,
     playerId: playerId || 'default'
   }, trace);
 
   if (isMultiplayer) {
     await revealTilesAsync({
-      visibleCoordsJson: shadeResponse.tilesJson,
+      visibleCoordsJson: lightResponse.tilesJson,
       playerId: 'multi-shared'
     }, trace);
   }
@@ -272,7 +272,7 @@ async function exploreDoor(call, callback) {
       return;
     }
 
-    log.info(`Orchestrated ${structureType}: fit at ${placeRes.originX},${placeRes.originY}`);
+    log.trace(`Orchestrated ${structureType}: fit at ${placeRes.originX},${placeRes.originY}`);
 
     // 4. Run render pipeline with updated world state
     const rendered = await buildAndRender(
@@ -370,7 +370,7 @@ async function computeMapModifiers(call, callback) {
       // Update hero with initial position
       await updatePositionAsync({ heroId, x: px, y: py }, trace);
 
-      log.info(`Initialized world via game-service: ${gameRes.levelName || 'Level 0'}`);
+      log.trace(`Initialized world via game-service: ${gameRes.levelName || 'Level 0'}`);
     }
 
     // 4. Get map type for light computation
@@ -456,7 +456,7 @@ async function processInput(call, callback) {
       px = 0;
       py = 0;
       await updatePositionAsync({ heroId, x: px, y: py }, trace);
-      log.info(`Initialized world via ProcessInput: ${gameRes.levelName || 'Level 0'}`);
+      log.trace(`Initialized world via ProcessInput: ${gameRes.levelName || 'Level 0'}`);
     }
 
     // 4. Fetch dynamic keymap
@@ -607,7 +607,7 @@ async function processInput(call, callback) {
         tilesJsonStr = placeRes.tilesJson;
         roomsJsonStr = placeRes.roomsJson;
         message = `${message} You discover a ${structureType}: ${description}`;
-        log.info(`ProcessInput: explored ${structureType} at ${placeRes.originX},${placeRes.originY}`);
+        log.trace(`ProcessInput: explored ${structureType} at ${placeRes.originX},${placeRes.originY}`);
       } else {
         message = 'The door opens to solid rock...';
       }
