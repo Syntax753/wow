@@ -555,63 +555,43 @@ function App() {
                 placeholder="Adventurer"
                 value={guestNameInput}
                 onChange={e => setGuestNameInput(e.target.value)}
-                onKeyDown={async e => {
+                onKeyDown={e => {
                   if (e.key === 'Enter') {
-                    const name = guestNameInput.trim() || 'Adventurer'
-                    const res = await login(name)
-                    if (res.data) {
-                      setPlayerId(res.data.playerId)
-                      setPlayerName(res.data.name)
-                      setAuthProvider('guest')
-                      document.cookie = `wow_player_id=${encodeURIComponent(res.data.playerId)}; path=/; max-age=604800; samesite=lax`
-                      document.cookie = `wow_player_name=${encodeURIComponent(res.data.name)}; path=/; max-age=604800; samesite=lax`
-                      setShowGuestModal(false)
-                      initialSyncDone.current = false
-                      setMapGrid([])
-                      setGameState(createInitialState())
-                      setHero(null)
-                      setOverlay(null)
-                      setLevelName('')
-                      setIsMultiplayer(false)
-                      await startNewAdventure('default', res.data.name)
-                      const heroRes = await getHero()
-                      setHero(heroRes.data)
-                      if (heroRes.data) {
-                        setGameState(prev => ({ ...prev, player: { x: heroRes.data.positionX ?? prev.player.x, y: heroRes.data.positionY ?? prev.player.y } }))
-                      }
-                      setScreen('game')
-                    }
+                    (document.querySelector('.guest-enter-btn') as HTMLButtonElement)?.click()
                   }
                 }}
                 style={{ width: '100%', padding: '10px', background: 'transparent', border: '1px solid var(--terminal-dim)', color: 'var(--terminal-text, #eee)', fontFamily: 'var(--font-mono)', fontSize: '14px', borderRadius: '4px', boxSizing: 'border-box' }}
               />
               <button
-                className="splash-btn"
+                className="splash-btn guest-enter-btn"
                 style={{ width: '100%', marginTop: '16px' }}
                 onClick={async () => {
-                  const name = guestNameInput.trim() || 'Adventurer'
-                  const res = await login(name)
-                  if (res.data) {
+                  try {
+                    const name = guestNameInput.trim() || 'Adventurer'
+                    const res = await login(name)
+                    if (!res.data) return
                     setPlayerId(res.data.playerId)
                     setPlayerName(res.data.name)
                     setAuthProvider('guest')
                     document.cookie = `wow_player_id=${encodeURIComponent(res.data.playerId)}; path=/; max-age=604800; samesite=lax`
                     document.cookie = `wow_player_name=${encodeURIComponent(res.data.name)}; path=/; max-age=604800; samesite=lax`
                     setShowGuestModal(false)
-                    initialSyncDone.current = false
-                    setMapGrid([])
-                    setGameState(createInitialState())
-                    setHero(null)
-                    setOverlay(null)
-                    setLevelName('')
-                    setIsMultiplayer(false)
+                    // Start new adventure — this resets hero + world state on the server
                     await startNewAdventure('default', res.data.name)
                     const heroRes = await getHero()
                     setHero(heroRes.data)
                     if (heroRes.data) {
                       setGameState(prev => ({ ...prev, player: { x: heroRes.data.positionX ?? prev.player.x, y: heroRes.data.positionY ?? prev.player.y } }))
                     }
+                    // Transition to game — the useEffect initial sync will render the map
+                    initialSyncDone.current = false
+                    setMapGrid([])
+                    setIsMultiplayer(false)
+                    setOverlay(null)
+                    setLevelName('')
                     setScreen('game')
+                  } catch (err) {
+                    console.error('Guest login error:', err)
                   }
                 }}
               >
