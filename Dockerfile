@@ -11,7 +11,7 @@ COPY packages/dnd-service/package.json packages/dnd-service/
 COPY packages/hero-service/package.json packages/hero-service/
 COPY packages/inventory-service/package.json packages/inventory-service/
 COPY packages/action-service/package.json packages/action-service/
-COPY packages/shade-service/package.json packages/shade-service/
+COPY packages/light-service/package.json packages/light-service/
 COPY packages/render-service/package.json packages/render-service/
 COPY packages/world-service/package.json packages/world-service/
 COPY packages/input-service/package.json packages/input-service/
