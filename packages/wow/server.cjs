@@ -417,11 +417,16 @@ const server = http.createServer(async (req, res) => {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
+      'X-Accel-Buffering': 'no', // Disable proxy buffering (nginx/Cloud Run)
     });
+    res.flushHeaders();
     res.write(`event: connected\ndata: ${JSON.stringify({ playerId: pid })}\n\n`);
     sseClients.set(pid, res);
-    req.on('close', () => { sseClients.delete(pid); });
+    // Heartbeat every 30s to keep Cloud Run connection alive (5min timeout)
+    const heartbeat = setInterval(() => {
+      try { res.write(': heartbeat\n\n'); } catch { clearInterval(heartbeat); }
+    }, 30000);
+    req.on('close', () => { clearInterval(heartbeat); sseClients.delete(pid); });
     // Send current player positions immediately
     broadcastPlayerPositions(null);
     return;
