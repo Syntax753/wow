@@ -36,7 +36,8 @@
       "Bash(python3 -c \":*)",
       "Bash(gcloud run:*)",
       "Bash(gcloud artifacts:*)",
-      "Bash(gcloud iap:*)"
+      "Bash(gcloud iap:*)",
+      "Bash(find C:Userssynt_devwow -type f \\\\\\(-name *.json -o -name *.js \\\\\\))"
     ]
   }
 }

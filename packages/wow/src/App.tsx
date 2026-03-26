@@ -297,6 +297,17 @@ function App() {
         setOtherPlayers(positions.filter((p: { playerId: string }) => p.playerId !== pid))
       } catch {}
     })
+    es.addEventListener('resync', () => {
+      // Another player joined/left — re-sync the map so we see them in rendered tiles
+      const ws = serializeWorldState(gameStateRef.current)
+      const vp = getViewport(zoomRef.current)
+      syncTurn(ws.playerX, ws.playerY, ws.currentEnemiesJson, 8, ws.level, vp.w, vp.h)
+        .then(res => {
+          const mapData = res.data.map
+          if (mapData?.merged_tiles_json) setMapGrid(JSON.parse(mapData.merged_tiles_json))
+        })
+        .catch(() => {})
+    })
     es.onerror = () => { /* EventSource auto-reconnects */ }
     return () => { es.close(); setOtherPlayers([]) }
   }, [screen, serviceStatus])

@@ -18,6 +18,7 @@ const API_PORT = process.env.PORT || process.env.API_PORT || 3001;
 // ── GitHub OAuth config ──────────────────────────────────────────────
 const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID || '';
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET || '';
+const OAUTH_CALLBACK_URL = process.env.OAUTH_CALLBACK_URL || ''; // explicit override for Cloud Run
 
 // Derive base URL from the incoming request (respects Cloud Run's forwarded headers)
 function getOrigin(req) {
@@ -134,6 +135,13 @@ function broadcastPlayerPositions(excludePlayerId) {
           }
         }
       });
+  }
+}
+
+function broadcastResync(excludePlayerId) {
+  for (const [clientId, res] of sseClients) {
+    if (clientId === excludePlayerId) continue;
+    try { res.write(`event: resync\ndata: {}\n\n`); } catch {}
   }
 }
 
@@ -269,7 +277,7 @@ const server = http.createServer(async (req, res) => {
 
   // === GitHub OAuth (outside rootSpan — these are redirects, not JSON APIs) ===
   if (req.url === '/api/auth/github' && req.method === 'GET') {
-    const callbackUrl = `${getOrigin(req)}/api/auth/github/callback`;
+    const callbackUrl = OAUTH_CALLBACK_URL || `${getOrigin(req)}/api/auth/github/callback`;
     const params = new URLSearchParams({
       client_id: GITHUB_CLIENT_ID,
       redirect_uri: callbackUrl,
@@ -284,7 +292,7 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const code = url.searchParams.get('code');
     const frontend = getFrontendUrl(req);
-    const callbackUrl = `${getOrigin(req)}/api/auth/github/callback`;
+    const callbackUrl = OAUTH_CALLBACK_URL || `${getOrigin(req)}/api/auth/github/callback`;
     if (!code) {
       res.writeHead(302, { Location: frontend });
       res.end();
@@ -752,6 +760,15 @@ const server = http.createServer(async (req, res) => {
         players[playerId].color = joinRes.color;
       }
 
+      // Upgrade all other active players to multiplayer mode so they
+      // use multi-service path (shared fog-of-war, player positions)
+      for (const [pid, p] of Object.entries(players)) {
+        if (pid !== playerId && p.active && !p.multiplayer) {
+          p.multiplayer = true;
+          log.info(`Upgraded ${p.name} (${pid}) to multiplayer mode`);
+        }
+      }
+
       rootSpan.timeEnd = Date.now();
       json(res, 200, envelope({
         success: joinRes.success,
@@ -763,6 +780,10 @@ const server = http.createServer(async (req, res) => {
       }, [
         logEntry(`${name} joins the adventure...`, 'discovery', 'game'),
       ], rootSpan));
+
+      // Broadcast to all existing players so they see the new player immediately
+      broadcastPlayerPositions();
+      broadcastResync();
 
     } else if (req.url === '/api/leave' && req.method === 'POST') {
       // Support both header and body for playerId (sendBeacon can't send custom headers)
@@ -776,6 +797,9 @@ const server = http.createServer(async (req, res) => {
         players[playerId].active = false;
         players[playerId].multiplayer = false;
         log.info(`Player ${players[playerId].name} (${playerId}) left the game`);
+        // Notify remaining players
+        broadcastPlayerPositions();
+        broadcastResync();
       }
       rootSpan.timeEnd = Date.now();
       json(res, 200, envelope({ success: true }, [], rootSpan));

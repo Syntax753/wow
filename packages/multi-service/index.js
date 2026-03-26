@@ -86,6 +86,17 @@ function assignColor() {
   return PLAYER_COLORS[Object.keys(sessions).length % PLAYER_COLORS.length];
 }
 
+// Auto-register a player who was upgraded to multiplayer mid-session
+function ensureSession(playerId) {
+  if (!sessions[playerId]) {
+    const color = assignColor();
+    sessions[playerId] = { name: playerId, color, active: true, lastSeen: Date.now(), spawnIndex: 0 };
+    worldActive = true; // they already have a world running
+    log.info(`[Multi] Auto-registered ${playerId} (upgraded from solo) color=${color}`);
+  }
+  sessions[playerId].lastSeen = Date.now();
+}
+
 async function buildPlayersJson(trace) {
   const active = getActiveSessions();
   const positions = [];
@@ -218,8 +229,8 @@ async function processMultiInput(call, callback) {
   try {
     const { playerId, key, visualRange, currentEnemiesJson, level } = call.request;
 
-    // Update lastSeen
-    if (sessions[playerId]) sessions[playerId].lastSeen = Date.now();
+    // Auto-register if upgraded from solo mid-session
+    ensureSession(playerId);
 
     // Build combined player positions
     const playersJson = await buildPlayersJson(trace);
@@ -266,7 +277,8 @@ async function syncMultiPlayer(call, callback) {
   try {
     const { playerId, playerX, playerY, visualRange, currentEnemiesJson } = call.request;
 
-    if (sessions[playerId]) sessions[playerId].lastSeen = Date.now();
+    // Auto-register if upgraded from solo mid-session
+    ensureSession(playerId);
 
     const playersJson = await buildPlayersJson(trace);
 
