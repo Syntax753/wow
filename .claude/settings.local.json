@@ -34,7 +34,8 @@
       "Bash(grep -r \"document.cookie\\\\|localStorage\\\\|sessionStorage\" /c/Users/synt_/dev/wow/packages --include=*.ts --include=*.tsx --include=*.js)",
       "Bash(grep -r process.env /c/Users/synt_/dev/wow/packages/wow --include=*.cjs --include=*.ts --include=*.tsx)",
       "Bash(python3 -c \":*)",
-      "Bash(gcloud run:*)"
+      "Bash(gcloud run:*)",
+      "Bash(gcloud artifacts:*)"
     ]
   }
 }
