@@ -61,9 +61,9 @@ function App() {
 
   // Zoom system
   const [zoomMode, setZoomMode] = useState<'fixed' | 'dynamic' | 'adaptive'>('dynamic')
-  const [mapZoom, setMapZoom] = useState(60) // viewport width in tiles
-  const [targetZoom, setTargetZoom] = useState(60)
-  const zoomRef = useRef(60)
+  const [mapZoom, setMapZoom] = useState(120) // viewport width in tiles
+  const [targetZoom, setTargetZoom] = useState(120)
+  const zoomRef = useRef(120)
   const MIN_ZOOM = 20
   const MAX_ZOOM = 160
   const ZOOM_STEP = 10
